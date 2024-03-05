@@ -14,7 +14,7 @@
 
 SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 
-double sensorData;
+double sensorData, SensorVolt; 
 
 int delayTime = 500;
 
@@ -29,7 +29,8 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
-  sensorData = analogRead(A4);
+  SensorVolt = analogRead(A4) * 0.0048828125;
+  sensorData = 13 * pow(SensorVolt, -1);
   BluetoothSerial.println(sensorData, DEC);
   Serial.println(sensorData);
 
