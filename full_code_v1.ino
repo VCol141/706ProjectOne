@@ -134,8 +134,6 @@ void setup(void)
   pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
   delay(1000); //settling time but no really needed
 
-  run_state = MAPPING;
-
   path_state = FORWARD;
   last_path_state = FORWARD;
 }
@@ -179,26 +177,26 @@ STATE mapping() {
   switch (map_state){
     case FINDING_WALL:
       if(MR1 < LR3 || MR2 < LR1){
-        dir = CCW;
+        turn_dir = CCW;
       }else{
-        dir = CW;
+        turn_dir = CW;
       }
       break;
 
     case TURNING:
       (turn_dir == CCW) ? ccw() : cw();
-      if((LR1 + LR3) == BOARDWIDTH){
+      if((LR1 + LR3) == BOARD_WIDTH){
         stop();
         map_state = STRAFING;
       }
       break;
 
-    case STRAFING;
+    case STRAFING:
       if(LR1 > LR3){
         strafe_dir = LEFT;
         strafe_left();
       }else{
-        stafe_dir = RIGHT;
+        strafe_dir = RIGHT;
         strafe_right();
       }
 
