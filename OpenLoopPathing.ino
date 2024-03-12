@@ -40,7 +40,7 @@ const byte right_front = 51;
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
 
-int distance_cm = 50;
+double sonar_cm;
 
 //Pathing variables
     enum pathing_state {
@@ -65,6 +65,19 @@ Servo turret_motor;
 int speed_val = 100;
 int speed_change;
 
+//IR Sensor equation variables
+int MR1coeff = 14207;
+double MR1power = -0.917;
+
+int MR2coeff = 12764;
+double MR2power = -0.882;
+
+int LR1coeff = 193172;
+double LR1power = -1.246;
+
+int LR3coeff = 177961;
+double LR3power = -1.245;
+
 //Serial Pointer
 HardwareSerial *SerialCom;
 
@@ -72,7 +85,7 @@ int pos = 0;
 void setup(void)
 {
   BluetoothSerial.begin(115200);
-  turret_motor.attach(11);
+  turret_motor.attach(20);
   pinMode(LED_BUILTIN, OUTPUT);
 
   // The Trigger pin will tell the sensor to range find
@@ -86,14 +99,11 @@ void setup(void)
   delay(1000);
   SerialCom->println("Setup....");
 
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
-  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
-  Serial.begin(115200); // Starts the serial communication
-  BluetoothSerial.begin(115200);
+  pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
   delay(1000); //settling time but no really needed
 
-    path_state = FORWARD;
-    last_state = FORWARD;
+  path_state = FORWARD;
+  last_state = FORWARD;
 }
 
 void loop(void) //main loop
@@ -106,10 +116,9 @@ void loop(void) //main loop
       break;
     case RUNNING: //Lipo Battery Volage OK
       machine_state =  running();
-      open_loop_path();
       break;
     case STOPPED: //Stop of Lipo Battery voltage is too low, to protect Battery
-      machine_state =  stopped();
+      machine_state = stopped();
       break;
   };
 }
@@ -145,6 +154,7 @@ STATE running() {
 
 #ifndef NO_HC-SR04
     HC_SR04_range();
+    open_loop_path(sonar_cm);
 #endif
 
 #ifndef NO_BATTERY_V_OK
@@ -290,7 +300,6 @@ void HC_SR04_range()
   unsigned long t2;
   unsigned long pulse_width;
   float cm;
-  float inches;
 
   // Hold the trigger pin high for at least 10 us
   digitalWrite(TRIG_PIN, HIGH);
@@ -329,18 +338,15 @@ void HC_SR04_range()
   // are found in the datasheet, and calculated from the assumed speed
   //of sound in air at sea level (~340 m/s).
   cm = pulse_width / 58.0;
-  distance_cm = cm; //save to global var
-  inches = pulse_width / 148.0;
 
   // Print out results
   if ( pulse_width > MAX_DIST ) {
     SerialCom->println("HC-SR04: Out of range");
   } else {
-    SerialCom->print("HC-SR04:");
-    SerialCom->print(cm);
-    SerialCom->println("cm");
-    BluetoothSerial.print(cm);
+    BluetoothSerial.print(cm, DEC);
+    BluetoothSerial.println(' ');
   }
+  sonar_cm = cm;
 }
 #endif
 
@@ -507,38 +513,45 @@ void strafe_right ()
 }
 
 // Open loop test script
-void open_loop_path()
+void open_loop_path(double sonar_cm)
 {
-    HC_SR04_range();
+  switch (path_state){
+    case FORWARD:
+      if(sonar_cm < 15){
+          stop();
+          delay(500);
+          path_state = STRAFE_RIGHT;
+      }else{
+          forward();
+      }
+      last_state = FORWARD;
+      break;
 
-    switch (path_state):
-        case FORWARD:
-            if(distance < 15){
-                stop();
-                delay(500);
-                path_state = STRAFE_RIGHT;
-            }else{
-                forward();
-            }
-            last_state = FORWARD;
-            break;
+    case BACKWARD:
+      if(sonar_cm > 106.9){
+          stop();
+          delay(500);
+          path_state = STRAFE_RIGHT;
+      }else{
+          reverse();
+      }
+      last_state = BACKWARD;
+      break;
 
-        case BACKWARD:
-            if(distance > 106.9){
-                stop();
-                delay(500);
-                path_state = STRAFE_RIGHT;
-            }else{
-                reverse();
-            }
-            last_state = BACKWARD;
-            break;
+    case STRAFE_RIGHT:
+      strafe_right();
+      delay(2000);
+      stop();
+      delay(500);
+      path_state = (last_state == FORWARD) ? BACKWARD : FORWARD;
+      break;
+  }
+}
 
-        case STRAFE_RIGHT:
-            strafe_right();
-            delay(2000);
-            stop();
-            delay(500);
-            path_state = (last_state == FORWARD) ? BACKWARD : FORWARD;
-            break;
+double read_sensor_cm(int coefficient, double power, double sensor_reading){
+  double sensor_cm;
+  sensor_cm = coefficient * pow(sensor_reading, power);
+  BluetoothSerial.println(sensor_cm, DEC);
+  Serial.println(sensor_cm);
+  return sensor_cm;
 }
