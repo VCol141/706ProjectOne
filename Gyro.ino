@@ -1,12 +1,7 @@
-int sensorPin = A7;   //define the pin that gyro is connected
+int sensorPin = A2;   //define the pin that gyro is connected
 int sensorValue = 0;  // read out value of sensor
 
-float gyroSupplyVoltage = 5;    // supply voltage for gyro
 float gyroZeroVoltage = 0;      // the value of voltage when gyro is zero
-float gyroSensitivity = 0.007;  // gyro sensitivity unit is (mv/degree/second) get from datasheet
-float rotationThreshold = 1.5;  // because of gyro drifting, defining rotation angular velocity less
-
-// than this value will be ignored
 float gyroRate = 0;      // read out value of sensor in voltage
 float currentAngle = 0;  // current angle calculated by angular velocity integral on
 
@@ -48,19 +43,19 @@ void loop() {
     }
   }
   // convert the 0-1023 signal to 0-5v
-  gyroRate = (analogRead(sensorPin) * gyroSupplyVoltage) / 1023;
+  gyroRate = (analogRead(sensorPin) * 5.00) / 1023;
 
   // find the voltage offset the value of voltage when gyro is zero (still)
-  gyroRate -= (gyroZeroVoltage / 1023 * gyroSupplyVoltage);
+  gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
 
   // read out voltage divided the gyro sensitivity to calculate the angular velocity
-  float angularVelocity = gyroRate / gyroSensitivity;  // from Data Sheet, gyroSensitivity is 0.007 V/dps
+  float angularVelocity = gyroRate / 0.007;  // from Data Sheet, gyroSensitivity is 0.007 V/dps
 
   
 
 
   // if the angular velocity is less than the threshold, ignore it
-  if (angularVelocity >= rotationThreshold || angularVelocity <= -rotationThreshold) {
+  if (angularVelocity >= 1.50 || angularVelocity <= -1.50) {
     // we are running a loop in T (of T/1000 second).
     float angleChange = angularVelocity / (1000 / (millis() - oldTime));
     currentAngle += angleChange;
@@ -75,9 +70,7 @@ void loop() {
   }
   Serial.print(angularVelocity);
   Serial.print(" ");
-  Serial.print(oldTime);
-  Serial.print(" ");
   Serial.println(currentAngle);
   // control the time per loop
-  delay(10);
+  //delay(10);
 }
