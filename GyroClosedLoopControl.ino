@@ -57,6 +57,10 @@ double kd = 0;
 
 double ki_integral = 0;
 
+// Run time
+double startTime = 0;
+double runTime = 10000;
+
 void setup(void)
 {
     BluetoothSerial.begin(115200);
@@ -83,6 +87,7 @@ void loop(void)
         gyroAngle = 180;
         break;
     case RUNNING:
+        startTime = millis();
         machine_state = execution();
         break;
     case FINISHED:
@@ -112,7 +117,7 @@ STATE initialising()
 
     gyroZeroVoltage = sum / 100; // average the sum as the zero drifting
 
-    return RUNNING;
+    return (millis() - startTime > runTime) ? FINISHED : RUNNING;
 }
 
 STATE execution()
