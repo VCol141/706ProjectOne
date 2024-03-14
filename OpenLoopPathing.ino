@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 #define NO_READ_GYRO  //Uncomment of GYRO is not attached.
-//#define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
+#define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
 //#define NO_BATTERY_V_OK //Uncomment of BATTERY_V_OK if you do not care about battery damage.
 
 // Serial Data input pin
@@ -66,17 +66,23 @@ int speed_val = 100;
 int speed_change;
 
 //IR Sensor equation variables
-int MR1coeff = 14207;
-double MR1power = -0.917;
+double MR1coeff = 12.452;
+double MR1power = -0.889;
 
-int MR2coeff = 12764;
-double MR2power = -0.882;
+double MR2coeff = 12.887;
+double MR2power = -0.889;
 
-int LR1coeff = 193172;
-double LR1power = -1.246;
+double LR1coeff = 61.823;
+double LR1power = -1.032;
 
-int LR3coeff = 177961;
-double LR3power = -1.245;
+double LR3coeff = 911.866;
+double LR3power = -1.508;
+
+//IR Sensor distance variables
+double MR1cm, MR2cm, LR1cm, LR3cm;
+double MR1cm_reading, MR2cm_reading, LR1cm_reading, LR3cm_reading;
+int array_index = 0;
+double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 
 //Serial Pointer
 HardwareSerial *SerialCom;
@@ -87,6 +93,12 @@ void setup(void)
   BluetoothSerial.begin(115200);
   turret_motor.attach(20);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  //Initialise sensor pins
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  pinMode(A6, INPUT);
+  pinMode(A7, INPUT);
 
   // The Trigger pin will tell the sensor to range find
   pinMode(TRIG_PIN, OUTPUT);
@@ -154,7 +166,6 @@ STATE running() {
 
 #ifndef NO_HC-SR04
     HC_SR04_range();
-    open_loop_path(sonar_cm);
 #endif
 
 #ifndef NO_BATTERY_V_OK
@@ -162,19 +173,23 @@ STATE running() {
 #endif
 
 
-    turret_motor.write(pos);
+  //   turret_motor.write(pos);
 
-    if (pos == 0)
-    {
-      pos = 45;
-    }
-    else
-    {
-      pos = 0;
-    }
-  }
-
+  //   if (pos == 0)
+  //   {
+  //     pos = 45;
+  //   }
+  //   else
+  //   {
+  //     pos = 0;
+  //   }
+  // }
+  //Read and print IR sensor values
+  process_IR_sensors();
+  print_IR_values();
+  // open_loop_path(sonar_cm);
   return RUNNING;
+  }
 }
 
 //Stop of Lipo Battery voltage is too low, to protect Battery
@@ -548,10 +563,55 @@ void open_loop_path(double sonar_cm)
   }
 }
 
-double read_sensor_cm(int coefficient, double power, double sensor_reading){
+double read_IR(double coefficient, double power, double sensor_reading){
   double sensor_cm;
-  sensor_cm = coefficient * pow(sensor_reading, power);
-  BluetoothSerial.println(sensor_cm, DEC);
-  Serial.println(sensor_cm);
+  BluetoothSerial.print("SENSOR READING:");
+  BluetoothSerial.println(sensor_reading);
+  sensor_cm = coefficient *1000*(pow(sensor_reading, power));
   return sensor_cm;
 }
+
+void read_IR_sensors(){
+  BluetoothSerial.println("READ SENSOR START");
+  MR1cm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
+  MR2cm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
+  LR1cm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
+  LR3cm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
+}
+
+void process_IR_sensors(){
+  read_IR_sensors();
+
+  //add sensor values to relevant arrays
+  MR1arr[array_index] = MR1cm_reading;
+  MR2arr[array_index] = MR2cm_reading;
+  LR1arr[array_index] = LR1cm_reading;
+  LR3arr[array_index] = LR3cm_reading;
+
+  MR1cm = MR1cm_reading;
+  MR2cm = MR2cm_reading;
+  LR1cm = LR1cm_reading;
+  LR3cm = LR3cm_reading;
+
+  // MR1cm = average(MR1arr);
+  // MR2cm = average(MR2arr);
+  // LR1cm = average(LR1arr);
+  // LR3cm = average(LR3arr);
+  
+  array_index++;
+  if (array_index >= 21){
+    array_index = 0;
+  }
+}
+
+void print_IR_values(){
+  BluetoothSerial.print("MR1 DISTANCE:");
+  BluetoothSerial.println(MR1cm);
+  BluetoothSerial.print("MR2 DISTANCE:");
+  BluetoothSerial.println(MR2cm);
+  BluetoothSerial.print("LR1 DISTANCE:");
+  BluetoothSerial.println(LR1cm);
+  BluetoothSerial.print("LR3 DISTANCE:");
+  BluetoothSerial.println(LR3cm);
+}
+
