@@ -51,8 +51,8 @@ enum STATE
 };
 
 // Control Loop
-double kp = 0.4;
-double ki = 0.1;
+double kp = 0;
+double ki = 0;
 double kd = 0;
 
 double ki_integral = 0;
@@ -177,7 +177,7 @@ void Gyro()
         }
     }
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (analogRead(GyroPin) * 5.00) / 1023;
+    gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
