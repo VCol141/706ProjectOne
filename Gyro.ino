@@ -68,9 +68,9 @@ void loop() {
   } else if (currentAngle > 359) {
     currentAngle -= 360;
   }
-  Serial.print(angularVelocity);
+  
   Serial.print(" ");
-  Serial.println(currentAngle);
+  Serial.println(angularVelocity);
   // control the time per loop
-  //delay(10);
+  delay(10);
 }
