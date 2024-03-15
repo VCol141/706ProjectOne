@@ -34,7 +34,7 @@ int gyroPin = A2;
 int gyroVal = 0;
 
 float gyroZeroVoltage = 0;
-float gyroRate = 0;
+float gyroAngularVelocity = 0;
 float gyroAngle = 0;
 
 byte serialRead = 0;
@@ -85,10 +85,12 @@ void loop(void)
         machine_state = initialising();
         Gyro();
         gyroAngle = 180;
+        startTime = millis();
+        gyroTime = millis();
         break;
     case RUNNING:
-        startTime = millis();
         machine_state = execution();
+        gyroTime = millis();
         break;
     case FINISHED:
         machine_state = stopping();
@@ -177,23 +179,15 @@ void Gyro()
         }
     }
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
-
-    // find the voltage offset the value of voltage when gyro is zero (still)
-    gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
-
-    // read out voltage divided the gyro sensitivity to calculate the angular velocity
-    float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
+    gyroAngularVelocity = ((analogRead(gyroPin) - gyroZeroVoltage) * 0.007 * 5.00) / 1023;
 
     // if the angular velocity is less than the threshold, ignore it
-    if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
+    if (gyroAngularVelocity >= 1.50 || gyroAngularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        float angleChange = angularVelocity / (1000 / (millis() - gyroTime));
-        gyroAngle += angleChange;
+        gyroAngle += gyroAngularVelocity / (1000 / (millis() - gyroTime));
     }
 
-    gyroTime = millis();
     // keep the angle between 0-360
     if (gyroAngle < 0)
     {
@@ -203,4 +197,21 @@ void Gyro()
     {
         gyroAngle -= 360;
     }
+}
+
+void NewGyro()
+{
+    if (Serial.available())
+    {
+        if (Serial.reat() == 49)
+        {
+            Serial.end();
+        }
+    }
+
+    gyroRate = (analogRead(gyroPin)) * 5.00) / 1023;
+
+    gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
+
+
 }
