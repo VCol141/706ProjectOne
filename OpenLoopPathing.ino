@@ -81,9 +81,13 @@ double LR3power = -1.508;
 //IR Sensor distance variables
 double MR1cm, MR2cm, LR1cm, LR3cm;
 double MR1cm_reading, MR2cm_reading, LR1cm_reading, LR3cm_reading;
-double MR1var, MR2var, LR1var, LR3var;
 int array_index = 0;
 double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
+
+//Kalman variables
+double MR1var, MR2var, LR1var, LR3var;
+double sensor_noise = 1;
+double process_noise = 10;
 
 //Serial Pointer
 HardwareSerial *SerialCom;
