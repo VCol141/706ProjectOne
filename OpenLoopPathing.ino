@@ -624,7 +624,6 @@ void filter_IR_reading(){
   LR3cm = IR_Kalman(LR3cm_reading, LR3cm, &LR3var);
 }
 
-
 double IR_Kalman(double distance_reading, double last_reading, double* last_var){
   double post_est, prior_var, post_var, kalman_gain;
 
