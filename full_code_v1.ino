@@ -71,8 +71,6 @@ enum strafing_dir {
 
 strafing_dir strafe_dir;
 
-
-
 //Pathing variables
 enum pathing_state {
     FORWARD,
@@ -98,17 +96,28 @@ int speed_val = 100;
 int speed_change;
 
 //IR Sensor equation variables
-int MR1coeff = 14207;
-double MR1power = -0.917;
+double MR1coeff = 12.452;
+double MR1power = -0.889;
 
-int MR2coeff = 12764;
-double MR2power = -0.882;
+double MR2coeff = 12.887;
+double MR2power = -0.889;
 
-int LR1coeff = 193172;
-double LR1power = -1.246;
+double LR1coeff = 61.823;
+double LR1power = -1.032;
 
-int LR3coeff = 177961;
-double LR3power = -1.245;
+double LR3coeff = 911.866;
+double LR3power = -1.508;
+
+//IR Sensor distance variables
+double MR1cm, MR2cm, LR1cm, LR3cm;
+double MR1cm_reading, MR2cm_reading, LR1cm_reading, LR3cm_reading;
+int array_index = 0;
+double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
+
+//Kalman variables
+double MR1var, MR2var, LR1var, LR3var;
+double sensor_noise = 1;
+double process_noise = 10;
 
 //Serial Pointer
 HardwareSerial *SerialCom;
@@ -119,6 +128,12 @@ void setup(void)
   BluetoothSerial.begin(115200);
   turret_motor.attach(20);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  //Initialise sensor pins
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  pinMode(A6, INPUT);
+  pinMode(A7, INPUT);
 
   // The Trigger pin will tell the sensor to range find
   pinMode(TRIG_PIN, OUTPUT);
@@ -165,18 +180,21 @@ STATE initialising() {
   delay(1000); //One second delay to see the serial string "INITIALISING...."
   SerialCom->println("Enabling Motors...");
   enable_motors();
+  initialise_IR_sensors();
   SerialCom->println("RUNNING STATE...");
   return MAPPING;
 }
 
 STATE mapping() {
-  read_IR_function;
+  read_IR_sensors();
+  //filter_IR_reading();
   HC_SR04_range();
+  delay(200);
 
   //map area and find starting corner
   switch (map_state){
     case FINDING_WALL:
-      if(MR1 < LR3 || MR2 < LR1){
+      if(MR1cm_reading < LR3cm_reading || MR2cm_reading < LR1cm_reading){
         turn_dir = CCW;
       }else{
         turn_dir = CW;
@@ -185,14 +203,14 @@ STATE mapping() {
 
     case TURNING:
       (turn_dir == CCW) ? ccw() : cw();
-      if((LR1 + LR3) == BOARD_WIDTH){
+      if((LR1cm_reading + LR3cm_reading) == BOARD_WIDTH){
         stop();
         map_state = STRAFING;
       }
       break;
 
     case STRAFING:
-      if(LR1 > LR3){
+      if(LR1cm_reading > LR3cm_reading){
         strafe_dir = LEFT;
         strafe_left();
       }else{
@@ -200,7 +218,7 @@ STATE mapping() {
         strafe_right();
       }
 
-      if((MR1 == 15 && MR2 == NULL) || (MR2 == 15 && MR1 == NULL)){
+      if((MR1cm_reading == 15 && MR2cm_reading == NULL) || (MR2cm_reading == 15 && MR1cm_reading == NULL)){
         map_state = MOVE_BACK;
         stop();
       }
@@ -638,10 +656,75 @@ void open_loop_path(double sonar_cm)
   }
 }
 
-double read_sensor_cm(int coefficient, double power, double sensor_reading){
+double read_IR(double coefficient, double power, double sensor_reading){
   double sensor_cm;
-  sensor_cm = coefficient * pow(sensor_reading, power);
-  BluetoothSerial.println(sensor_cm, DEC);
-  Serial.println(sensor_cm);
+  BluetoothSerial.print("SENSOR READING:");
+  BluetoothSerial.println(sensor_reading);
+  sensor_cm = coefficient *1000*(pow(sensor_reading, power));
   return sensor_cm;
+}
+
+void read_IR_sensors(){
+  BluetoothSerial.println("READ SENSOR START");
+  MR1cm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
+  MR2cm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
+  LR1cm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
+  LR3cm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
+}
+
+void intialise_IR_sensors(){
+  int i;
+  double MR1sum, MR2sum, LR1sum, LR3sum;
+  int iterations = 100;
+
+  for (i = 0; i>iterations; i++){
+    read_IR_sensors();
+    MR1sum += MR1cm_reading;
+    MR2sum += MR2cm_reading;
+    LR1sum += LR1cm_reading;
+    LR3sum += LR3cm_reading;
+    delay(5);
+  }
+  MR1cm = MR1sum/iterations;
+  MR2cm = MR2sum/iterations;
+  LR1cm = LR1sum/iterations;
+  LR3cm = LR3sum/iterations;
+
+  //Set IR variance to 0
+  MR1var = 0;
+  MR2var = 0;
+  LR1var = 0;
+  LR3var = 0;
+}
+
+void print_IR_values(){
+  BluetoothSerial.print("MR1 DISTANCE:");
+  BluetoothSerial.println(MR1cm);
+  BluetoothSerial.print("MR2 DISTANCE:");
+  BluetoothSerial.println(MR2cm);
+  BluetoothSerial.print("LR1 DISTANCE:");
+  BluetoothSerial.println(LR1cm);
+  BluetoothSerial.print("LR3 DISTANCE:");
+  BluetoothSerial.println(LR3cm);
+}
+
+void filter_IR_reading(){
+  MR1cm = IR_Kalman(MR1cm_reading, MR1cm, &MR1var);
+  MR2cm = IR_Kalman(MR1cm_reading, MR2cm, &MR2var);
+  LR1cm = IR_Kalman(LR1cm_reading, LR1cm, &LR1var);
+  LR3cm = IR_Kalman(LR3cm_reading, LR3cm, &LR3var);
+}
+
+double IR_Kalman(double distance_reading, double last_reading, double* last_var){
+  double post_est, prior_var, post_var, kalman_gain;
+
+  //NEED TO DEFINE process_noise AND sensor_noise for function to work
+
+  prior_var = *last_var + process_noise; //variation in last reading
+
+  kalman_gain = prior_var/(prior_var + sensor_noise); //gain correction of prior variation in last reading
+  post_est  = last_reading + kalman_gain*(distance_reading-last_reading);
+  post_var = (1-kalman_gain)*prior_var;
+  *last_var = post_var;
+  return (post_est)
 }
