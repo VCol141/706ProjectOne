@@ -119,7 +119,7 @@ STATE initialising()
 
     gyroZeroVoltage = sum / 100; // average the sum as the zero drifting
 
-    return (millis() - startTime > runTime) ? FINISHED : RUNNING;
+    return RUNNING;
 }
 
 STATE execution()
@@ -127,7 +127,6 @@ STATE execution()
     STATE return_state = RUNNING;
 
     double e, correction_val;
-    // delay(10);
 
     Gyro();
 
@@ -137,18 +136,20 @@ STATE execution()
 
     ki_integral += e;
 
+
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
     right_rear_motor.writeMicroseconds(1500 - speed_val - 30);
     right_font_motor.writeMicroseconds(1500 - speed_val - 30);
+  
 
-    BluetoothSerial.print(e);
+    BluetoothSerial.print(gyroAngle);
     BluetoothSerial.print(" ");
-    BluetoothSerial.print(correction_val);
+    BluetoothSerial.print(gyroVal);
     BluetoothSerial.print(" ");
-    BluetoothSerial.println(gyroAngle);
+    BluetoothSerial.println(analogRead(gyroPin));
 
-    return return_state;
+    return (millis() - startTime > runTime) ? FINISHED : RUNNING;
 }
 
 STATE stopping()
@@ -163,12 +164,14 @@ STATE stopping()
     pinMode(right_rear, INPUT);
     pinMode(right_front, INPUT);
 
+    delay(10);
+
     return FINISHED;
 }
 
 void Gyro()
 {
-
+  double angleChange;
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
     {
@@ -179,14 +182,19 @@ void Gyro()
         }
     }
     // convert the 0-1023 signal to 0-5v
-    gyroAngularVelocity = ((analogRead(gyroPin) - gyroZeroVoltage) * 0.007 * 5.00) / 1023;
+    gyroAngularVelocity = ((analogRead(gyroPin) - gyroZeroVoltage) * 5.00) / 1023.00;
+
+    gyroAngularVelocity = gyroAngularVelocity / 0.007;
 
     // if the angular velocity is less than the threshold, ignore it
     if (gyroAngularVelocity >= 1.50 || gyroAngularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        gyroAngle += gyroAngularVelocity / (1000 / (millis() - gyroTime));
+        angleChange = gyroAngularVelocity / (1000 / (millis() - gyroTime));
+        gyroAngle += angleChange;
     }
+
+    BluetoothSerial.println(angleChange);
 
     // keep the angle between 0-360
     if (gyroAngle < 0)
@@ -197,21 +205,4 @@ void Gyro()
     {
         gyroAngle -= 360;
     }
-}
-
-void NewGyro()
-{
-    if (Serial.available())
-    {
-        if (Serial.reat() == 49)
-        {
-            Serial.end();
-        }
-    }
-
-    gyroRate = (analogRead(gyroPin)) * 5.00) / 1023;
-
-    gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
-
-
 }
