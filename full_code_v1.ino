@@ -19,8 +19,9 @@
 #define OUTPUTBLUETOOTHMONITOR 1
 
 // Board measurements
-#define BOARD_WIDTH 122
-#define BOARD_LENGTH 199
+#define BOARD_WIDTH 925
+#define BOARD_LENGTH 1990
+#define WALL_LIMIT_DISTANCE 150
 
 SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 
@@ -52,6 +53,7 @@ double sonar_cm;
 enum mapping_state {
     FINDING_WALL,
     TURNING,
+    FINDING_CORNER,
     STRAFING,
     MOVE_BACK,              //could optimise later
 };
@@ -82,7 +84,7 @@ enum pathing_state {
 pathing_state path_state;
 pathing_state last_path_state;
 
-// Anything over 400 cm (23200 us pulse) is "out of range". Hit:If you decrease to this the ranging sensor but the timeout is short, you may not need to read up to 4meters.
+// Anything over 400 mm (23200 us pulse) is "out of range". Hit:If you decrease to this the ranging sensor but the timeout is short, you may not need to read up to 4meters.
 const unsigned int MAX_DIST = 23200;
 
 Servo left_font_motor;  // create servo object to control Vex Motor Controller 29
@@ -92,7 +94,7 @@ Servo right_font_motor;  // create servo object to control Vex Motor Controller 
 Servo turret_motor;
 
 
-int speed_val = 100;
+int speed_val = 200;
 int speed_change;
 
 //IR Sensor equation variables
@@ -109,8 +111,8 @@ double LR3coeff = 911.866;
 double LR3power = -1.508;
 
 //IR Sensor distance variables
-double MR1cm, MR2cm, LR1cm, LR3cm;
-double MR1cm_reading, MR2cm_reading, LR1cm_reading, LR3cm_reading;
+double MR1mm, MR2mm, LR1mm, LR3mm;
+double MR1mm_reading, MR2mm_reading, LR1mm_reading, LR3mm_reading;
 int array_index = 0;
 double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 
@@ -171,6 +173,7 @@ void loop(void) //main loop
       machine_state = stopped();
       break;
   };
+  delay(10);
 }
 
 
@@ -180,45 +183,67 @@ STATE initialising() {
   delay(1000); //One second delay to see the serial string "INITIALISING...."
   SerialCom->println("Enabling Motors...");
   enable_motors();
-  initialise_IR_sensors();
+  intialise_IR_sensors();
   SerialCom->println("RUNNING STATE...");
   return MAPPING;
 }
 
 STATE mapping() {
   read_IR_sensors();
-  //filter_IR_reading();
+  filter_IR_reading();
   HC_SR04_range();
-  delay(200);
 
+  BluetoothSerial.print("CURRENT STATE:");
+  BluetoothSerial.println(map_state);
+  BluetoothSerial.print("LR1 DISTANCE:");
+  BluetoothSerial.println(LR1mm);
+  BluetoothSerial.print("LR3 DISTANCE:");
+  BluetoothSerial.println(LR3mm);
+  BluetoothSerial.print("CURRENT WIDTH");
+  BluetoothSerial.println(LR1mm + LR3mm);
+  BluetoothSerial.print("SONAR DISTANCE");
+  BluetoothSerial.println(sonar_cm);
   //map area and find starting corner
   switch (map_state){
     case FINDING_WALL:
-      if(MR1cm_reading < LR3cm_reading || MR2cm_reading < LR1cm_reading){
+      if(MR1mm < LR3mm || MR2mm < LR1mm){
         turn_dir = CCW;
+          BluetoothSerial.println("Turning CCW");
       }else{
         turn_dir = CW;
+        BluetoothSerial.println("Turning CW");
       }
+      map_state = TURNING;
       break;
 
     case TURNING:
       (turn_dir == CCW) ? ccw() : cw();
-      if((LR1cm_reading + LR3cm_reading) == BOARD_WIDTH){
+      if((LR1mm + LR3mm) <= BOARD_WIDTH){
+        BluetoothSerial.println("Am aligned time to strafe");
         stop();
         map_state = STRAFING;
       }
       break;
 
-    case STRAFING:
-      if(LR1cm_reading > LR3cm_reading){
+    case FINDING_CORNER:
+      if(LR1mm > LR3mm){
         strafe_dir = LEFT;
-        strafe_left();
+        BluetoothSerial.println("Strafing left");
       }else{
         strafe_dir = RIGHT;
+        BluetoothSerial.println("Strafing right");
+      }
+      map_state = STRAFING;
+      break;
+
+    case STRAFING:
+      if(strafe_dir == LEFT){
+        strafe_left();
+      }else{
         strafe_right();
       }
 
-      if((MR1cm_reading == 15 && MR2cm_reading == NULL) || (MR2cm_reading == 15 && MR1cm_reading == NULL)){
+      if(((MR1mm <= WALL_LIMIT_DISTANCE) && (LR1mm <= WALL_LIMIT_DISTANCE) ) || ((MR2mm <= WALL_LIMIT_DISTANCE) && (LR3mm <= WALL_LIMIT_DISTANCE))){
         map_state = MOVE_BACK;
         stop();
       }
@@ -261,18 +286,6 @@ STATE running() {
 #ifndef NO_BATTERY_V_OK
     if (!is_battery_voltage_OK()) return STOPPED;
 #endif
-
-
-    turret_motor.write(pos);
-
-    if (pos == 0)
-    {
-      pos = 45;
-    }
-    else
-    {
-      pos = 0;
-    }
   }
 
   return RUNNING;
@@ -444,7 +457,7 @@ void HC_SR04_range()
   if ( pulse_width > MAX_DIST ) {
     SerialCom->println("HC-SR04: Out of range");
   } else {
-    BluetoothSerial.print(cm, DEC);
+    BluetoothSerial.print(cm);
     BluetoothSerial.println(' ');
   }
   sonar_cm = cm;
@@ -657,19 +670,19 @@ void open_loop_path(double sonar_cm)
 }
 
 double read_IR(double coefficient, double power, double sensor_reading){
-  double sensor_cm;
-  BluetoothSerial.print("SENSOR READING:");
-  BluetoothSerial.println(sensor_reading);
-  sensor_cm = coefficient *1000*(pow(sensor_reading, power));
-  return sensor_cm;
+  double sensor_mm;
+  // BluetoothSerial.print("SENSOR READING:");
+  // BluetoothSerial.println(sensor_reading);
+  sensor_mm = coefficient *1000*(pow(sensor_reading, power));
+  return sensor_mm;
 }
 
 void read_IR_sensors(){
-  BluetoothSerial.println("READ SENSOR START");
-  MR1cm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
-  MR2cm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
-  LR1cm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
-  LR3cm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
+  // BluetoothSerial.println("READ SENSOR START");
+  MR1mm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
+  MR2mm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
+  LR1mm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
+  LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
 
 void intialise_IR_sensors(){
@@ -679,16 +692,16 @@ void intialise_IR_sensors(){
 
   for (i = 0; i>iterations; i++){
     read_IR_sensors();
-    MR1sum += MR1cm_reading;
-    MR2sum += MR2cm_reading;
-    LR1sum += LR1cm_reading;
-    LR3sum += LR3cm_reading;
+    MR1sum += MR1mm_reading;
+    MR2sum += MR2mm_reading;
+    LR1sum += LR1mm_reading;
+    LR3sum += LR3mm_reading;
     delay(5);
   }
-  MR1cm = MR1sum/iterations;
-  MR2cm = MR2sum/iterations;
-  LR1cm = LR1sum/iterations;
-  LR3cm = LR3sum/iterations;
+  MR1mm = MR1sum/iterations;
+  MR2mm = MR2sum/iterations;
+  LR1mm = LR1sum/iterations;
+  LR3mm = LR3sum/iterations;
 
   //Set IR variance to 0
   MR1var = 0;
@@ -699,20 +712,20 @@ void intialise_IR_sensors(){
 
 void print_IR_values(){
   BluetoothSerial.print("MR1 DISTANCE:");
-  BluetoothSerial.println(MR1cm);
+  BluetoothSerial.println(MR1mm);
   BluetoothSerial.print("MR2 DISTANCE:");
-  BluetoothSerial.println(MR2cm);
+  BluetoothSerial.println(MR2mm);
   BluetoothSerial.print("LR1 DISTANCE:");
-  BluetoothSerial.println(LR1cm);
+  BluetoothSerial.println(LR1mm);
   BluetoothSerial.print("LR3 DISTANCE:");
-  BluetoothSerial.println(LR3cm);
+  BluetoothSerial.println(LR3mm);
 }
 
 void filter_IR_reading(){
-  MR1cm = IR_Kalman(MR1cm_reading, MR1cm, &MR1var);
-  MR2cm = IR_Kalman(MR1cm_reading, MR2cm, &MR2var);
-  LR1cm = IR_Kalman(LR1cm_reading, LR1cm, &LR1var);
-  LR3cm = IR_Kalman(LR3cm_reading, LR3cm, &LR3var);
+  MR1mm = IR_Kalman(MR1mm_reading, MR1mm, &MR1var);
+  MR2mm = IR_Kalman(MR2mm_reading, MR2mm, &MR2var);
+  LR1mm = IR_Kalman(LR1mm_reading, LR1mm, &LR1var);
+  LR3mm = IR_Kalman(LR3mm_reading, LR3mm, &LR3var);
 }
 
 double IR_Kalman(double distance_reading, double last_reading, double* last_var){
@@ -726,5 +739,5 @@ double IR_Kalman(double distance_reading, double last_reading, double* last_var)
   post_est  = last_reading + kalman_gain*(distance_reading-last_reading);
   post_var = (1-kalman_gain)*prior_var;
   *last_var = post_var;
-  return (post_est)
+  return (post_est);
 }
