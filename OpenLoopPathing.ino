@@ -82,6 +82,7 @@ double LR3power = -1.508;
 double MR1cm, MR2cm, LR1cm, LR3cm;
 double MR1cm_reading, MR2cm_reading, LR1cm_reading, LR3cm_reading;
 int array_index = 0;
+int iterations = 20;
 double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 
 //Kalman variables
@@ -192,6 +193,7 @@ STATE running() {
   // }
   //Read and print IR sensor values
   read_IR_sensors();
+  filter_IR_reading();
   print_IR_values();
   // open_loop_path(sonar_cm);
   return RUNNING;
@@ -585,29 +587,47 @@ void read_IR_sensors(){
   LR3cm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
 
-void intialise_IR_sensors(){
-  int i;
+void initialise_IR_sensors(){
   double MR1sum, MR2sum, LR1sum, LR3sum;
-  int iterations = 100;
 
-  for (i = 0; i>iterations; i++){
+  for (int i = 0; i<=iterations; i++){
     read_IR_sensors();
-    MR1sum += MR1cm_reading;
-    MR2sum += MR2cm_reading;
-    LR1sum += LR1cm_reading;
-    LR3sum += LR3cm_reading;
+    MR1arr[i] = MR1cm_reading;
+    MR2arr[i] = MR2cm_reading;
+    LR1arr[i] = LR1cm_reading;
+    LR3arr[i] = LR3cm_reading;
     delay(5);
   }
-  MR1cm = MR1sum/iterations;
-  MR2cm = MR2sum/iterations;
-  LR1cm = LR1sum/iterations;
-  LR3cm = LR3sum/iterations;
+  MR1cm = average_array(MR1arr, 0);
+  MR2cm = average_array(MR2arr, 0);
+  LR1cm = average_array(LR1arr, 0);
+  LR3cm = average_array(LR3arr, 0);
 
   //Set IR variance to 0
   MR1var = 0;
   MR2var = 0;
   LR1var = 0;
   LR3var = 0;
+}
+
+double average_array(double* input_array, double last_average){
+  double sum = 0;
+  int count = 0;
+  
+  for (int i = 0; i<= iterations;i++){
+    // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
+    if ((input_array[i] > last_average-50 && input_array[i] <last_average+50) || (last_average == 0 && (input_array[i] > 0 && input_array[i] <1000))){ 
+      sum += input_array[i];
+      count++;
+    }
+  }
+  //If no valid values were read, set the average to 0
+  if (sum == 0){
+    return 0;
+  }
+  else{
+    return sum/count;
+  }
 }
 
 void print_IR_values(){
@@ -622,16 +642,33 @@ void print_IR_values(){
 }
 
 void filter_IR_reading(){
-  MR1cm = IR_Kalman(MR1cm_reading, MR1cm, &MR1var);
-  MR2cm = IR_Kalman(MR1cm_reading, MR2cm, &MR2var);
-  LR1cm = IR_Kalman(LR1cm_reading, LR1cm, &LR1var);
-  LR3cm = IR_Kalman(LR3cm_reading, LR3cm, &LR3var);
+  //Add values to given array
+  MR1arr[array_index] = MR1cm_reading;
+  MR2arr[array_index] = MR2cm_reading;
+  LR1arr[array_index] = LR1cm_reading;
+  LR3arr[array_index] = LR3cm_reading;
+
+  //Set next array index
+  array_index++;
+  if (array_index >=20){
+    array_index = 0;
+  }
+
+  //Average these to final value 
+  MR1cm = average_array(MR1arr, MR1cm);
+  MR2cm = average_array(MR2arr, MR2cm);
+  LR1cm = average_array(LR1arr, LR1cm);
+  LR3cm = average_array(LR3arr, LR3cm);
+
+  // MR1cm = IR_Kalman(MR1cm_reading, MR1cm, &MR1var);
+  // MR2cm = IR_Kalman(MR2cm_reading, MR2cm, &MR2var);
+  // LR1cm = IR_Kalman(LR1cm_reading, LR1cm, &LR1var);
+  // LR3cm = IR_Kalman(LR3cm_reading, LR3cm, &LR3var);
 }
+
 
 double IR_Kalman(double distance_reading, double last_reading, double* last_var){
   double post_est, prior_var, post_var, kalman_gain;
-
-  //NEED TO DEFINE process_noise AND sensor_noise for function to work
 
   prior_var = *last_var + process_noise; //variation in last reading
 
@@ -639,5 +676,5 @@ double IR_Kalman(double distance_reading, double last_reading, double* last_var)
   post_est  = last_reading + kalman_gain*(distance_reading-last_reading);
   post_var = (1-kalman_gain)*prior_var;
   *last_var = post_var;
-  return (post_est)
+  return (post_est);
 }

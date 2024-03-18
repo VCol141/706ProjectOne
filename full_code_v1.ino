@@ -114,6 +114,7 @@ double LR3power = -1.508;
 double MR1mm, MR2mm, LR1mm, LR3mm;
 double MR1mm_reading, MR2mm_reading, LR1mm_reading, LR3mm_reading;
 int array_index = 0;
+int iterations = 20;
 double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 
 //Kalman variables
@@ -686,22 +687,20 @@ void read_IR_sensors(){
 }
 
 void intialise_IR_sensors(){
-  int i;
-  double MR1sum, MR2sum, LR1sum, LR3sum;
-  int iterations = 100;
+double MR1sum, MR2sum, LR1sum, LR3sum;
 
-  for (i = 0; i>iterations; i++){
+  for (int i = 0; i<=iterations; i++){
     read_IR_sensors();
-    MR1sum += MR1mm_reading;
-    MR2sum += MR2mm_reading;
-    LR1sum += LR1mm_reading;
-    LR3sum += LR3mm_reading;
+    MR1arr[i] = MR1mm_reading;
+    MR2arr[i] = MR2mm_reading;
+    LR1arr[i] = LR1mm_reading;
+    LR3arr[i] = LR3mm_reading;
     delay(5);
   }
-  MR1mm = MR1sum/iterations;
-  MR2mm = MR2sum/iterations;
-  LR1mm = LR1sum/iterations;
-  LR3mm = LR3sum/iterations;
+  MR1mm = average_array(MR1arr, 0);
+  MR2mm = average_array(MR2arr, 0);
+  LR1mm = average_array(LR1arr, 0);
+  LR3mm = average_array(LR3arr, 0);
 
   //Set IR variance to 0
   MR1var = 0;
@@ -709,6 +708,27 @@ void intialise_IR_sensors(){
   LR1var = 0;
   LR3var = 0;
 }
+
+double average_array(double* input_array, double last_average){
+  double sum = 0;
+  int count = 0;
+  
+  for (int i = 0; i<= iterations;i++){
+    // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
+    if ((input_array[i] > last_average-50 && input_array[i] <last_average+50) || (last_average == 0 && (input_array[i] > 0 && input_array[i] <1000))){ 
+      sum += input_array[i];
+      count++;
+    }
+  }
+  //If no valid values were read, set the average to 0
+  if (sum == 0){
+    return 0;
+  }
+  else{
+    return sum/count;
+  }
+}
+
 
 void print_IR_values(){
   BluetoothSerial.print("MR1 DISTANCE:");
@@ -722,10 +742,28 @@ void print_IR_values(){
 }
 
 void filter_IR_reading(){
-  MR1mm = IR_Kalman(MR1mm_reading, MR1mm, &MR1var);
-  MR2mm = IR_Kalman(MR2mm_reading, MR2mm, &MR2var);
-  LR1mm = IR_Kalman(LR1mm_reading, LR1mm, &LR1var);
-  LR3mm = IR_Kalman(LR3mm_reading, LR3mm, &LR3var);
+//Add values to given array
+  MR1arr[array_index] = MR1mm_reading;
+  MR2arr[array_index] = MR2mm_reading;
+  LR1arr[array_index] = LR1mm_reading;
+  LR3arr[array_index] = LR3mm_reading;
+
+  //Set next array index
+  array_index++;
+  if (array_index >=20){
+    array_index = 0;
+  }
+
+  //Average these to final value 
+  MR1mm = average_array(MR1arr, MR1mm);
+  MR2mm = average_array(MR2arr, MR2mm);
+  LR1mm = average_array(LR1arr, LR1mm);
+  LR3mm = average_array(LR3arr, LR3mm);
+
+  // MR1mm = IR_Kalman(MR1mm_reading, MR1mm, &MR1var);
+  // MR2mm = IR_Kalman(MR2mm_reading, MR2mm, &MR2var);
+  // LR1mm = IR_Kalman(LR1mm_reading, LR1mm, &LR1var);
+  // LR3mm = IR_Kalman(LR3mm_reading, LR3mm, &LR3var);
 }
 
 double IR_Kalman(double distance_reading, double last_reading, double* last_var){
