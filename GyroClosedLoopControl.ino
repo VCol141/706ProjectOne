@@ -60,6 +60,14 @@ double ki_integral = 0;
 // Gyro Comp
 float InitialVoltage;
 
+//Kalman variables
+double prev_val;
+double last_var = 999;
+double sensor_noise = 5;
+double process_noise = 5;
+
+
+
 void setup(void)
 {
     BluetoothSerial.begin(115200);
@@ -181,11 +189,17 @@ void Gyro()
             Serial.end(); // end the serial communication to display the sensor data on monitor
         }
     }
+
+    double current_val = analogRead(gyroPin);
+
+
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
+    gyroRate = (Kalman(current_val, prev_val) * 5.00) / 1023;
+
+    prev_val = current_val;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
-    gyroRate -= (GyroComp() * 5.00) / 1023;
+    gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
 
     // read out voltage divided the gyro sensitivity to calculate the angular velocity
     float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
@@ -200,8 +214,8 @@ void Gyro()
 
     BluetoothSerial.print("Current Gyro Angle: ");
     BluetoothSerial.println(gyroAngle);
-    BluetoothSerial.print(" , Adjusted Gyro Zero Voltage: ");
-    BluetoothSerial.println(GyroComp());
+    BluetoothSerial.print("Gyro Rate: ");
+    BluetoothSerial.println(gyroRate);
 
     gyroTime = millis();
 
@@ -216,6 +230,21 @@ void Gyro()
         gyroAngle -= 360;
     }
 }
+
+
+double Kalman(double rawdata, double prev_est){   // Kalman Filter
+  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+
+  a_priori_est = prev_est;  
+  a_priori_var = last_var1 + process_noise1; 
+
+  kalman_gain = a_priori_var/(a_priori_var+sensor_noise1);
+  a_post_est = a_priori_est + kalman_gain*(rawdata-a_priori_est);
+  a_post_var = (1- kalman_gain)*a_priori_var;
+  last_var1 = a_post_var;
+  return a_post_est;
+}
+
 
 double GyroComp()
 {
