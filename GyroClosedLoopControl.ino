@@ -34,8 +34,8 @@ int gyroPin = A15;
 int gyroVal = 0;
 
 float gyroZeroVoltage = 0;
-float gyroAngle = 0;
 float gyroRate = 0;
+float gyroAngle = 0;
 
 byte serialRead = 0;
 
@@ -51,15 +51,11 @@ enum STATE
 };
 
 // Control Loop
-double kp = 0;
-double ki = 0;
+double kp = 0.4;
+double ki = 0.1;
 double kd = 0;
 
 double ki_integral = 0;
-
-// Run time
-double startTime = 0;
-double runTime = 10000;
 
 void setup(void)
 {
@@ -70,7 +66,7 @@ void setup(void)
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
-    // Starting Timer Conditions
+
     cli();
 
     TCCR1A = 0;           // Init Timer1A
@@ -84,22 +80,21 @@ void setup(void)
 
 void loop(void)
 {
+
     static STATE machine_state = STARTUP;
 
     switch (machine_state)
     {
     case STARTUP:
         machine_state = initialising();
+        Gyro();
         gyroAngle = 180;
-        startTime = millis();
-        gyroTime = millis();
-        BluetoothSerial.println(" ------ SetUp Complete -----  ");
+
         sei();
         break;
     case RUNNING:
         //machine_state = execution();
-        //Gyro();
-        delay(100);
+        delay(50);
         break;
     case FINISHED:
         machine_state = stopping();
@@ -136,6 +131,9 @@ STATE execution()
     STATE return_state = RUNNING;
 
     double e, correction_val;
+    // delay(10);
+
+    Gyro();
 
     e = 180 - gyroAngle;
 
@@ -143,13 +141,18 @@ STATE execution()
 
     ki_integral += e;
 
-
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
-    right_rear_motor.writeMicroseconds(1500 - speed_val);
-    right_font_motor.writeMicroseconds(1500 - speed_val);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - 30);
+    right_font_motor.writeMicroseconds(1500 - speed_val - 30);
 
-    return (millis() - startTime > runTime) ? FINISHED : RUNNING;
+    BluetoothSerial.print(e);
+    BluetoothSerial.print(" ");
+    BluetoothSerial.print(correction_val);
+    BluetoothSerial.print(" ");
+    BluetoothSerial.println(gyroAngle);
+
+    return return_state;
 }
 
 STATE stopping()
@@ -164,8 +167,6 @@ STATE stopping()
     pinMode(right_rear, INPUT);
     pinMode(right_front, INPUT);
 
-    delay(10);
-
     return FINISHED;
 }
 
@@ -176,42 +177,41 @@ ISR(TIMER1_OVF_vect)
 
 void Gyro()
 {
+
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
     {
-          serialRead = Serial.read(); // Read input
-          if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
+        serialRead = Serial.read(); // Read input
+        if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
         {
-              Serial.end(); // end the serial communication to display the sensor data on monitor
+            Serial.end(); // end the serial communication to display the sensor data on monitor
         }
     }
-    
-      // convert the 0-1023 signal to 0-5v
+    // convert the 0-1023 signal to 0-5v
     gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
 
     // read out voltage divided the gyro sensitivity to calculate the angular velocity
-    float angularVelocity = gyroRate / 0.007;  // from Data Sheet, gyroSensitivity is 0.007 V/dps
+    float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
 
     // if the angular velocity is less than the threshold, ignore it
-    if (angularVelocity >= 1.50 || angularVelocity <= -1.50) 
+    if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        float angleChange = angularVelocity / (1000 / millis() - gyroTime);
+        float angleChange = angularVelocity / (1000 / (millis() - gyroTime));
         gyroAngle += angleChange;
     }
-
-    gyroTime = millis();
 
     BluetoothSerial.print(millis() - gyroTime);
     BluetoothSerial.print(" ");
     BluetoothSerial.println(gyroAngle);
 
-  
+    gyroTime = millis();
+
+
     // keep the angle between 0-360
-  
     if (gyroAngle < 0)
     {
         gyroAngle += 360;
