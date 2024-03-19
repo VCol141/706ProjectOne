@@ -680,10 +680,19 @@ double read_IR(double coefficient, double power, double sensor_reading){
 
 void read_IR_sensors(){
   // BluetoothSerial.println("READ SENSOR START");
-  MR1mm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
-  MR2mm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
-  LR1mm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
-  LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
+  // Define arrays to store analog pin numbers and corresponding variables
+  int analogPins[] = {A4, A6, A5, A7};
+  int* mm_readings[] = {&MR1mm_reading, &MR2mm_reading, &LR1mm_reading, &LR3mm_reading};
+  int* coeff[] = {&MR1coeff, &MR2coeff, &LR1coeff, &LR3coeff};
+  int* power[] = {&MR1power, &MR2power, &LR1power, &LR3power};
+
+  // Iterate through the arrays
+  for (int i = 0; i < sizeof(analogPins) / sizeof(analogPins[0]); ++i) {
+      int analogValue = analogRead(analogPins[i]);
+      if (analogValue >= 5 && analogValue <= 40) {
+          *mm_readings[i] = read_IR(*coeff[i], *power[i], analogValue);
+      }
+  }
 }
 
 void intialise_IR_sensors(){
