@@ -56,6 +56,7 @@ enum mapping_state {
     FINDING_CORNER,
     STRAFING,
     MOVE_BACK,              //could optimise later
+    DEBUG
 };
 mapping_state map_state;
 
@@ -186,6 +187,7 @@ STATE initialising() {
   enable_motors();
   intialise_IR_sensors();
   SerialCom->println("RUNNING STATE...");
+  map_state = FINDING_WALL;
   return MAPPING;
 }
 
@@ -222,7 +224,7 @@ STATE mapping() {
       if((LR1mm + LR3mm) <= BOARD_WIDTH){
         BluetoothSerial.println("Am aligned time to strafe");
         stop();
-        map_state = STRAFING;
+        map_state = DEBUG;
       }
       break;
 
@@ -256,7 +258,12 @@ STATE mapping() {
         return RUNNING;
         stop();
       }
-      break;        
+      break;   
+
+    case DEBUG;
+      stop();
+    break;
+         
   }
   return MAPPING;
 }
