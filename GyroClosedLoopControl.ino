@@ -51,29 +51,25 @@ enum STATE
 };
 
 // Control Loop
-double kp = 0.4;
-double ki = 0.1;
+double kp = 5;
+double ki = 0;
 double kd = 0;
 
 double ki_integral = 0;
+
+// Gyro Comp
+float InitialVoltage;
 
 void setup(void)
 {
     BluetoothSerial.begin(115200);
 
     pinMode(gyroPin, INPUT);
+    pinMode(A14, INPUT);
 
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
-
-    cli();
-
-    TCCR1A = 0;           // Init Timer1A
-    TCCR1B = 0;           // Init Timer1B
-    TCCR1B |= B00000011;  // Prescaler = 64
-    TCNT1 = (16000000) / ((64 * 100) + 1);        // Timer Preloading
-    TIMSK1 |= B00000001;  // Enable Timer Overflow Interrupt
 
     delay(1000); // settling time but no really needed
 }
@@ -89,11 +85,9 @@ void loop(void)
         machine_state = initialising();
         Gyro();
         gyroAngle = 180;
-
-        sei();
         break;
     case RUNNING:
-        //machine_state = execution();
+        machine_state = execution();
         delay(50);
         break;
     case FINISHED:
@@ -105,7 +99,9 @@ void loop(void)
 STATE initialising()
 {
     int i;
-    float sum = 0;
+    float sum1 = 0;
+    float sum2 = 0;
+
 
     // Motor Initialising
     left_font_motor.attach(left_front);   // attaches the servo on pin left_front to turn Vex Motor Controller 29 On
@@ -117,11 +113,20 @@ STATE initialising()
     for (i = 0; i < 100; i++)
     { // read 100 values of voltage when gyro is at still, to calculate the zero-drift.
         gyroVal = analogRead(gyroPin);
-        sum += gyroVal;
+        sum1 += gyroVal;
         delay(5);
     }
 
-    gyroZeroVoltage = sum / 100; // average the sum as the zero drifting
+    for (i = 0; i < 100; i++)
+    {
+        InitialVoltage = analogRead(A14);
+        sum2 += InitialVoltage;
+        delay(5);
+    }
+
+    InitialVoltage = sum2 / 100;
+
+    gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
     return RUNNING;
 }
@@ -143,14 +148,8 @@ STATE execution()
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
-    right_rear_motor.writeMicroseconds(1500 - speed_val - 30);
-    right_font_motor.writeMicroseconds(1500 - speed_val - 30);
-
-    BluetoothSerial.print(e);
-    BluetoothSerial.print(" ");
-    BluetoothSerial.print(correction_val);
-    BluetoothSerial.print(" ");
-    BluetoothSerial.println(gyroAngle);
+    right_rear_motor.writeMicroseconds(1500 - speed_val);
+    right_font_motor.writeMicroseconds(1500 - speed_val);
 
     return return_state;
 }
@@ -170,11 +169,6 @@ STATE stopping()
     return FINISHED;
 }
 
-ISR(TIMER1_OVF_vect)
-{
-  Gyro();
-}
-
 void Gyro()
 {
 
@@ -191,7 +185,7 @@ void Gyro()
     gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
-    gyroRate -= (gyroZeroVoltage / 1023 * 5.00);
+    gyroRate -= (GyroComp() * 5.00) / 1023;
 
     // read out voltage divided the gyro sensitivity to calculate the angular velocity
     float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
@@ -204,9 +198,10 @@ void Gyro()
         gyroAngle += angleChange;
     }
 
-    BluetoothSerial.print(millis() - gyroTime);
-    BluetoothSerial.print(" ");
+    BluetoothSerial.print("Current Gyro Angle: ");
     BluetoothSerial.println(gyroAngle);
+    BluetoothSerial.print(" , Adjusted Gyro Zero Voltage: ");
+    BluetoothSerial.println(GyroComp());
 
     gyroTime = millis();
 
@@ -220,4 +215,12 @@ void Gyro()
     {
         gyroAngle -= 360;
     }
+}
+
+double GyroComp()
+{
+    double currentVoltage = analogRead(A4); 
+    double voltagePrecent = currentVoltage / InitialVoltage;
+
+    return gyroZeroVoltage * voltagePrecent;
 }
