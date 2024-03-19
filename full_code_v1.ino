@@ -682,14 +682,17 @@ void read_IR_sensors(){
   // BluetoothSerial.println("READ SENSOR START");
   // Define arrays to store analog pin numbers and corresponding variables
   int analogPins[] = {A4, A6, A5, A7};
-  int* mm_readings[] = {&MR1mm_reading, &MR2mm_reading, &LR1mm_reading, &LR3mm_reading};
-  int* coeff[] = {&MR1coeff, &MR2coeff, &LR1coeff, &LR3coeff};
-  int* power[] = {&MR1power, &MR2power, &LR1power, &LR3power};
+  double* mm_readings[] = {&MR1mm_reading, &MR2mm_reading, &LR1mm_reading, &LR3mm_reading};
+  double* coeff[] = {&MR1coeff, &MR2coeff, &LR1coeff, &LR3coeff};
+  double* power[] = {&MR1power, &MR2power, &LR1power, &LR3power};
+  double minMR = 50.0, maxMR = 400.0;
+  double minLR = 100.0, maxLR = 800.0;
 
   // Iterate through the arrays
   for (int i = 0; i < sizeof(analogPins) / sizeof(analogPins[0]); ++i) {
-      int analogValue = analogRead(analogPins[i]);
-      if (analogValue >= 5 && analogValue <= 40) {
+      double analogValue = analogRead(analogPins[i]);
+      if ((i < 2 && analogValue >= minMR && analogValue <= maxMR) || 
+          (i >= 2 && analogValue >= minLR && analogValue <= maxLR)) {
           *mm_readings[i] = read_IR(*coeff[i], *power[i], analogValue);
       }
   }
