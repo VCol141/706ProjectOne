@@ -36,6 +36,7 @@ int gyroVal = 0;
 float gyroZeroVoltage = 0;
 float gyroRate = 0;
 float gyroAngle = 0;
+float gyroAngleChange = 0;
 
 byte serialRead = 0;
 
@@ -52,7 +53,7 @@ enum STATE
 
 // Control Loop
 double kp = 5;
-double ki = 0;
+double ki = 0.5;
 double kd = 0;
 
 double ki_integral = 0;
@@ -63,8 +64,8 @@ float InitialVoltage;
 //Kalman variables
 double prev_val_gyro;
 double last_var_gyro = 999;
-double sensor_noise_gyro = 5;
-double process_noise_gyro = 5;
+double sensor_noise_gyro = 10;
+double process_noise_gyro = 1;
 
 
 void setup(void)
@@ -157,11 +158,19 @@ STATE execution()
 
     Gyro();
 
-    e = 180 - gyroAngle;
+    e = gyroAngleChange;
 
     correction_val = constrain(kp * e + ki * ki_integral, -120, 120);
 
     ki_integral += e;
+
+    BluetoothSerial.print("e:                   ");
+    BluetoothSerial.println(e);
+     BluetoothSerial.print("Current Gyro Angle: ");
+    BluetoothSerial.println(gyroAngle);
+    BluetoothSerial.print("correction:           ");
+    BluetoothSerial.println(correction_val);
+    BluetoothSerial.println(" ");
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
@@ -217,14 +226,9 @@ void Gyro()
     if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        float angleChange = angularVelocity / (1000 / (millis() - gyroTime));
-        gyroAngle += angleChange;
+        gyroAngleChange = angularVelocity / (1000 / (millis() - gyroTime));
+        gyroAngle += gyroAngleChange;
     }
-
-    BluetoothSerial.print("Current Gyro Angle: ");
-    BluetoothSerial.println(gyroAngle);
-    BluetoothSerial.print("Gyro Rate: ");
-    BluetoothSerial.println(gyroRate);
 
     gyroTime = millis();
 
