@@ -130,6 +130,7 @@ HardwareSerial *SerialCom;
 int gyroPin = A15;
 int gyroVal = 0;
 
+float gyroTime = 0;
 float gyroZeroVoltage = 0;
 float gyroRate = 0;
 float gyroAngle = 0;
@@ -875,11 +876,6 @@ void Gyro()
         gyroAngle += angleChange;
     }
 
-    BluetoothSerial.print("Current Gyro Angle: ");
-    BluetoothSerial.println(gyroAngle);
-    BluetoothSerial.print("Gyro Rate: ");
-    BluetoothSerial.println(gyroRate);
-
     gyroTime = millis();
 
 
@@ -934,6 +930,14 @@ void GyroSetup()
   }
 
   gyroZeroVoltage = sum / 100;
+
+  gyroAngle = 180;
+
+  for (int i = 0; i < 100; i++)
+  {
+    Gyro();
+    delay(10);
+  }
 
   gyroAngle = 180;
 }
