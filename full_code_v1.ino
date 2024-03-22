@@ -126,6 +126,30 @@ double process_noise = 10;
 //Serial Pointer
 HardwareSerial *SerialCom;
 
+// Gyro
+int gyroPin = A15;
+int gyroVal = 0;
+
+float gyroZeroVoltage = 0;
+float gyroRate = 0;
+float gyroAngle = 0;
+
+// Gyro Kalman Filter
+double prev_val_gyro;
+double last_var_gyro = 999;
+double sensor_noise_gyro = 5;
+double process_noise_gyro = 5;
+
+// Control Loop
+// Control Loop
+
+#define CONTROL_CONSTRAINT 100
+double kp = 5;
+double ki = 0;
+double kd = 0;
+
+double ki_integral = 0;
+
 int pos = 0;
 void setup(void)
 {
@@ -155,6 +179,9 @@ void setup(void)
 
   path_state = FORWARD;
   last_path_state = FORWARD;
+
+  // Gyro Setup
+  GyroSetup();
 }
 
 void loop(void) //main loop
@@ -648,7 +675,8 @@ void open_loop_path(double sonar_cm)
           delay(500);
           path_state = STRAFE_RIGHT;
       }else{
-          forward();
+          //forward();
+          ClosedLoopForward();
       }
       last_path_state = FORWARD;
       break;
@@ -806,4 +834,100 @@ double IR_Kalman(double distance_reading, double last_reading, double* last_var)
   post_var = (1-kalman_gain)*prior_var;
   *last_var = post_var;
   return (post_est);
+}
+
+void Gyro()
+{
+
+    // put your main code here, to run repeatedly:
+    if (Serial.available()) // Check for input from terminal
+    {
+        serialRead = Serial.read(); // Read input
+        if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
+        {
+            Serial.end(); // end the serial communication to display the sensor data on monitor
+        }
+    }
+
+    double current_val = analogRead(gyroPin);
+
+
+    // convert the 0-1023 signal to 0-5v
+    gyroRate = (KalmanGyro(current_val) * 5.00) / 1023;
+
+    prev_val_gyro = current_val;
+
+    // find the voltage offset the value of voltage when gyro is zero (still)
+    gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
+
+    // read out voltage divided the gyro sensitivity to calculate the angular velocity
+    float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
+
+    // if the angular velocity is less than the threshold, ignore it
+    if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
+    {
+        // we are running a loop in T (of T/1000 second).
+        float angleChange = angularVelocity / (1000 / (millis() - gyroTime));
+        gyroAngle += angleChange;
+    }
+
+    BluetoothSerial.print("Current Gyro Angle: ");
+    BluetoothSerial.println(gyroAngle);
+    BluetoothSerial.print("Gyro Rate: ");
+    BluetoothSerial.println(gyroRate);
+
+    gyroTime = millis();
+
+
+    // keep the angle between 0-360
+    if (gyroAngle < 0)
+    {
+        gyroAngle += 360;
+    }
+    else if (gyroAngle > 359)
+    {
+        gyroAngle -= 360;
+    }
+}
+
+double KalmanGyro(double rawdata){   // Kalman Filter
+  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+
+  a_priori_var = last_var_gyro + process_noise_gyro; 
+
+  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_gyro);
+  a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
+  a_post_var = (1- kalman_gain)*a_priori_var;
+  last_var_gyro = a_post_var;
+  return a_post_est;
+}
+
+void ClosedLoopForward()
+{
+  double e, correction_val;
+
+  e = 180 - gyroAngle;
+
+  correction_val = contrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+
+  ki_integral += e;
+
+  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+  left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val);
+  right_font_motor.writeMicroseconds(1500 - speed_val);
+}
+
+void GyroSetup()
+{
+  float sum;
+
+  for (int i = 0; i < 100; i++) 
+  {
+    gyroVal = analogeRead(gyroPin);
+    sum += gyroVal;
+    delay(5);
+  }
+
+  gyroZeroVoltage = sum / 100;
 }
