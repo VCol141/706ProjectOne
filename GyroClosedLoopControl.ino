@@ -35,7 +35,6 @@ int gyroVal = 0;
 
 float gyroZeroVoltage = 0;
 float gyroRate = 0;
-float gyroAngle = 0;
 float gyroAngleChange = 0;
 
 byte serialRead = 0;
@@ -125,26 +124,7 @@ STATE initialising()
         delay(5);
     }
 
-    for (i = 0; i < 100; i++)
-    {
-        InitialVoltage = analogRead(A14);
-        sum2 += InitialVoltage;
-        delay(5);
-    }
-
-    InitialVoltage = sum2 / 100;
-
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
-
-    gyroAngle = 180;
-
-    for (int i = 0; i < 100; i++)
-    {
-        Gyro();
-        delay(10);
-    }
-
-  gyroAngle = 180;
 
     return RUNNING;
 }
@@ -227,21 +207,9 @@ void Gyro()
     {
         // we are running a loop in T (of T/1000 second).
         gyroAngleChange = angularVelocity / (1000 / (millis() - gyroTime));
-        gyroAngle += gyroAngleChange;
     }
 
     gyroTime = millis();
-
-
-    // keep the angle between 0-360
-    if (gyroAngle < 0)
-    {
-        gyroAngle += 360;
-    }
-    else if (gyroAngle > 359)
-    {
-        gyroAngle -= 360;
-    }
 }
 
 
@@ -255,13 +223,4 @@ double KalmanGyro(double rawdata){   // Kalman Filter
   a_post_var = (1- kalman_gain)*a_priori_var;
   last_var_gyro = a_post_var;
   return a_post_est;
-}
-
-
-double GyroComp()
-{
-    double currentVoltage = analogRead(A4); 
-    double voltagePrecent = currentVoltage / InitialVoltage;
-
-    return gyroZeroVoltage * voltagePrecent;
 }
