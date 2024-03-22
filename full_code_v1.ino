@@ -674,6 +674,7 @@ void open_loop_path(double sonar_cm)
           stop();
           delay(500);
           path_state = STRAFE_RIGHT;
+          gyroAngle = 180;
       }else{
           //forward();
           ClosedLoopForward();
@@ -698,6 +699,8 @@ void open_loop_path(double sonar_cm)
       stop();
       delay(500);
       path_state = (last_path_state == FORWARD) ? BACKWARD : FORWARD;
+
+      (path_state == FORWARD) ? gyroAngle = 180 : gyroAngle = gyroAngle;
       break;
 
     case STRAFE_LEFT:
@@ -705,6 +708,7 @@ void open_loop_path(double sonar_cm)
       delay(2000);          //adjust for desired strafing distance
       stop();
       path_state = (last_path_state == FORWARD ? BACKWARD : FORWARD);
+      (path_state == FORWARD) ? gyroAngle = 180 : gyroAngle = gyroAngle;
       break;
   }
 }
@@ -930,4 +934,6 @@ void GyroSetup()
   }
 
   gyroZeroVoltage = sum / 100;
+
+  gyroAngle = 180;
 }
