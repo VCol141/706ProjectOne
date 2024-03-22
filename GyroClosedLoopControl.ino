@@ -51,9 +51,8 @@ enum STATE
 };
 
 // Control Loop
-double kp = 5;
-double ki = 0.5;
-double kd = 0;
+double kp = 25;
+double ki = 10;
 
 double ki_integral = 0;
 
@@ -90,8 +89,6 @@ void loop(void)
     {
     case STARTUP:
         machine_state = initialising();
-        Gyro();
-        gyroAngle = 180;
         break;
     case RUNNING:
         machine_state = execution();
@@ -138,18 +135,18 @@ STATE execution()
 
     Gyro();
 
-    e = gyroAngleChange;
+    (abs(gyroAngleChange) > 2) ? e = 0 : e = gyroAngleChange;
 
     correction_val = constrain(kp * e + ki * ki_integral, -120, 120);
 
     ki_integral += e;
 
-    BluetoothSerial.print("e:                   ");
+    BluetoothSerial.print("e:            ");
     BluetoothSerial.println(e);
-     BluetoothSerial.print("Current Gyro Angle: ");
-    BluetoothSerial.println(gyroAngle);
-    BluetoothSerial.print("correction:           ");
+    BluetoothSerial.print("correction:   ");
     BluetoothSerial.println(correction_val);
+    BluetoothSerial.print("ki:           ");
+    BluetoothSerial.println(ki_integral);
     BluetoothSerial.println(" ");
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
