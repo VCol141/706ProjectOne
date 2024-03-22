@@ -61,11 +61,10 @@ double ki_integral = 0;
 float InitialVoltage;
 
 //Kalman variables
-double prev_val;
-double last_var = 999;
-double sensor_noise = 5;
-double process_noise = 5;
-
+double prev_val_gyro;
+double last_var_gyro = 999;
+double sensor_noise_gyro = 5;
+double process_noise_gyro = 5;
 
 
 void setup(void)
@@ -136,6 +135,16 @@ STATE initialising()
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
+    gyroAngle = 180;
+
+    for (int i = 0; i < 100; i++)
+    {
+        Gyro();
+        delay(10);
+    }
+
+  gyroAngle = 180;
+
     return RUNNING;
 }
 
@@ -194,9 +203,9 @@ void Gyro()
 
 
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (Kalman(current_val, prev_val) * 5.00) / 1023;
+    gyroRate = (KalmanGyro(current_val) * 5.00) / 1023;
 
-    prev_val = current_val;
+    prev_val_gyro = current_val;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
@@ -232,16 +241,15 @@ void Gyro()
 }
 
 
-double Kalman(double rawdata, double prev_est){   // Kalman Filter
+double KalmanGyro(double rawdata){   // Kalman Filter
   double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
-  a_priori_est = prev_est;  
-  a_priori_var = last_var1 + process_noise1; 
+  a_priori_var = last_var_gyro + process_noise_gyro; 
 
-  kalman_gain = a_priori_var/(a_priori_var+sensor_noise1);
-  a_post_est = a_priori_est + kalman_gain*(rawdata-a_priori_est);
+  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_gyro);
+  a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
   a_post_var = (1- kalman_gain)*a_priori_var;
-  last_var1 = a_post_var;
+  last_var_gyro = a_post_var;
   return a_post_est;
 }
 
