@@ -19,7 +19,7 @@
 #define OUTPUTBLUETOOTHMONITOR 1
 
 // Board measurements
-#define BOARD_WIDTH 925
+#define BOARD_WIDTH 1200
 #define BOARD_LENGTH 1990
 #define WALL_LIMIT_DISTANCE 150
 
@@ -202,6 +202,10 @@ STATE mapping() {
   BluetoothSerial.println(LR1mm);
   BluetoothSerial.print("LR3 DISTANCE:");
   BluetoothSerial.println(LR3mm);
+  BluetoothSerial.print("MR1 DISTANCE:");
+  BluetoothSerial.println(MR1mm);
+  BluetoothSerial.print("MR2 DISTANCE:");
+  BluetoothSerial.println(MR2mm);
   BluetoothSerial.print("CURRENT WIDTH");
   BluetoothSerial.println(LR1mm + LR3mm);
   BluetoothSerial.print("SONAR DISTANCE");
@@ -260,10 +264,10 @@ STATE mapping() {
       }
       break;   
 
-    case DEBUG;
+    case DEBUG:
       stop();
     break;
-         
+
   }
   return MAPPING;
 }
@@ -686,23 +690,28 @@ double read_IR(double coefficient, double power, double sensor_reading){
 }
 
 void read_IR_sensors(){
-  // BluetoothSerial.println("READ SENSOR START");
-  // Define arrays to store analog pin numbers and corresponding variables
-  int analogPins[] = {A4, A6, A5, A7};
-  double* mm_readings[] = {&MR1mm_reading, &MR2mm_reading, &LR1mm_reading, &LR3mm_reading};
-  double* coeff[] = {&MR1coeff, &MR2coeff, &LR1coeff, &LR3coeff};
-  double* power[] = {&MR1power, &MR2power, &LR1power, &LR3power};
-  double minMR = 50.0, maxMR = 400.0;
-  double minLR = 100.0, maxLR = 800.0;
+  // // BluetoothSerial.println("READ SENSOR START");
+  // // Define arrays to store analog pin numbers and corresponding variables
+  // int analogPins[] = {A4, A6, A5, A7};
+  // double* mm_readings[] = {&MR1mm_reading, &MR2mm_reading, &LR1mm_reading, &LR3mm_reading};
+  // double* coeff[] = {&MR1coeff, &MR2coeff, &LR1coeff, &LR3coeff};
+  // double* power[] = {&MR1power, &MR2power, &LR1power, &LR3power};
+  // double minMR = 50.0, maxMR = 400.0;
+  // double minLR = 100.0, maxLR = 800.0;
 
-  // Iterate through the arrays
-  for (int i = 0; i < sizeof(analogPins) / sizeof(analogPins[0]); ++i) {
-      double analogValue = analogRead(analogPins[i]);
-      if ((i < 2 && analogValue >= minMR && analogValue <= maxMR) || 
-          (i >= 2 && analogValue >= minLR && analogValue <= maxLR)) {
-          *mm_readings[i] = read_IR(*coeff[i], *power[i], analogValue);
-      }
-  }
+  // // Iterate through the arrays
+  // for (int i = 0; i < sizeof(analogPins) / sizeof(analogPins[0]); ++i) {
+  //     double analogValue = analogRead(analogPins[i]);
+  //     if ((i < 2 && analogValue >= minMR && analogValue <= maxMR) || 
+  //         (i >= 2 && analogValue >= minLR && analogValue <= maxLR)) {
+  //         *mm_readings[i] = read_IR(*coeff[i], *power[i], analogValue);
+  //     }
+  // }
+  
+  MR1mm_reading = read_IR(MR1coeff, MR1power, analogRead(A4));
+  MR2mm_reading = read_IR(MR2coeff, MR2power, analogRead(A6));
+  LR1mm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
+  LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
 
 void intialise_IR_sensors(){
