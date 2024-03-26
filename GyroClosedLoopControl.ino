@@ -51,10 +51,12 @@ enum STATE
 };
 
 // Control Loop
-double kp = 25;
-double ki = 10;
+double kp_1 = 25;
+double ki_1 = 10;
 
-double ki_integral = 0;
+double ki_integral_1 = 0;
+
+#define CONTROL_CONSTRAINT_1 100
 
 // Gyro Comp
 float InitialVoltage;
@@ -64,6 +66,25 @@ double prev_val_gyro;
 double last_var_gyro = 999;
 double sensor_noise_gyro = 10;
 double process_noise_gyro = 1;
+
+double sonar_cm;
+const unsigned int MAX_DIST = 23200;
+
+double sonar_dist = 0;
+
+// Control Loop
+double kp_2 = 15;
+double ki_2 = 0.5;
+
+double ki_integral_2 = 0;
+
+//Kalman variables sonar
+double prev_val_sonar;
+double last_var_sonar = 999;
+double sensor_noise_sonar = 10;
+double process_noise_sonar = 1;
+
+#define CONTROL_CONSTRAINT_2 150
 
 
 void setup(void)
@@ -76,6 +97,10 @@ void setup(void)
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
+
+    pinMode(TRIG_PIN, OUTPUT);
+    digitalWrite(TRIG_PIN, LOW);
+    pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
 
     delay(1000); // settling time but no really needed
 }
@@ -123,20 +148,22 @@ STATE initialising()
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
+    for (i = 0; i < 100; i++)
+    {
+        Sonar();
+        sonar_dist = sonar_cm;
+        sum2 += sonar_dist;
+        delay(5);
+    }
+
+    sonar_dist = sum2 / 100;
+
     return RUNNING;
 }
 
 STATE execution()
 {
     STATE return_state = RUNNING;
-
-    BluetoothSerial.print("e:            ");
-    BluetoothSerial.println(e);
-    BluetoothSerial.print("correction:   ");
-    BluetoothSerial.println(correction_val);
-    BluetoothSerial.print("ki:           ");
-    BluetoothSerial.println(ki_integral);
-    BluetoothSerial.println(" ");
 
     ClosedLoopStaph(speed_val);
 
@@ -145,38 +172,65 @@ STATE execution()
 
 void ClosedLoopStaph(int speed_val)
 {
-  double e, correction_val;
+    double e_1, e_2, correction_val_1, correction_val_2;
 
-  Gyro();
+    Gyro();
+    delay(10);
+    Sonar();
 
-  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+    (abs(gyroAngleChange) > 3) ? e_1 = 0 : e_1 = gyroAngleChange;
 
-  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+    e_2 = sonar_dist - sonar_cm;
 
-  ki_integral += e;
+    correction_val_1 = constrain(kp_1 * e_1 + ki_1 * ki_integral_1, -CONTROL_CONSTRAINT_1, CONTROL_CONSTRAINT_1);
 
-  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
-  left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
-  right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
-  right_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    correction_val_2 = constrain(kp_2 * e_2 + ki_2 * ki_integral_2, -CONTROL_CONSTRAINT_2, CONTROL_CONSTRAINT_2);
+
+    ki_integral_1 += e_1;
+    ki_integral_2 += e_2;
+
+
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_1 - correction_val_2);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_1 - correction_val_1);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_1 + correction_val_2);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_1 + correction_val_2);
+
+    BluetoothSerial.print("e:                     ");
+    BluetoothSerial.println(e_2);
+    BluetoothSerial.print("correction:            ");
+    BluetoothSerial.println(correction_val_2);
+    BluetoothSerial.print("ki:                    ");
+    BluetoothSerial.println(ki_integral_2);
+    BluetoothSerial.print("current reading:       ");
+    BluetoothSerial.println(sonar_cm);
+    BluetoothSerial.print("Aimed reading:         ");
+    BluetoothSerial.println(sonar_dist);
 }
 
 void ClosedLoopStraight(int speed_val)
 {
-  double e, correction_val;
+    double e, correction_val;
 
-  Gyro();
+    Gyro();
 
-  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+    (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
 
-  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+    correction_val = constrain(kp_1 * e + ki_1 * ki_integral_1, -CONTROL_CONSTRAINT_1, CONTROL_CONSTRAINT_1);
 
-  ki_integral += e;
+    ki_integral_1 += e;
 
-  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
-  left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
-  right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
-  right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
+    right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
+
+    BluetoothSerial.print("e:            ");
+    BluetoothSerial.println(e);
+    BluetoothSerial.print("correction:   ");
+    BluetoothSerial.println(correction_val);
+    BluetoothSerial.print("ki:           ");
+    BluetoothSerial.println(ki_integral_1);
+    BluetoothSerial.println(" ");
 }
 
 STATE stopping()
@@ -213,8 +267,6 @@ void Gyro()
     // convert the 0-1023 signal to 0-5v
     gyroRate = (KalmanGyro(current_val) * 5.00) / 1023;
 
-    prev_val_gyro = current_val;
-
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
 
@@ -231,6 +283,51 @@ void Gyro()
     gyroTime = millis();
 }
 
+void Sonar()
+{
+    unsigned long t1, t2, pulse_width;
+    float cm;
+     
+    // Hold the trigger pin high for at least 10 us
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+
+    // Wait for pulse on echo pin
+    t1 = micros();
+    while ( digitalRead(ECHO_PIN) == 0 ) {
+        t2 = micros();
+        pulse_width = t2 - t1;
+        if ( pulse_width > (MAX_DIST + 1000)) {
+            SerialCom->println("HC-SR04: NOT found");
+            return;
+        }
+    }
+
+    // Measure how long the echo pin was held high (pulse width)
+    // Note: the micros() counter will overflow after ~70 min
+
+    t1 = micros();
+    while ( digitalRead(ECHO_PIN) == 1)
+    {
+        t2 = micros();
+        pulse_width = t2 - t1;
+        if ( pulse_width > (MAX_DIST + 1000) ) {
+            SerialCom->println("HC-SR04: Out of range");
+            return;
+        }
+    }
+
+    t2 = micros();
+    pulse_width = t2 - t1;
+
+    // Calculate distance in centimeters and inches. The constants
+    // are found in the datasheet, and calculated from the assumed speed
+    //of sound in air at sea level (~340 m/s).
+    cm = pulse_width / 58.0;
+
+    ( 1 ? sonar_cm = cm : sonar_cm = KalmanSonar(cm));
+}
 
 double KalmanGyro(double rawdata){   // Kalman Filter
   double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
@@ -241,5 +338,19 @@ double KalmanGyro(double rawdata){   // Kalman Filter
   a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
   a_post_var = (1- kalman_gain)*a_priori_var;
   last_var_gyro = a_post_var;
+  prev_val_gyro = rawdata;
+  return a_post_est;
+}
+
+double KalmanSonar(double rawdata){   // Kalman Filter
+  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+
+  a_priori_var = last_var_sonar + process_noise_sonar; 
+
+  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
+  a_post_est = prev_val_sonar + kalman_gain*(rawdata-prev_val_sonar);
+  a_post_var = (1 * kalman_gain)*a_priori_var;
+  last_var_sonar = a_post_var;
+  prev_val_sonar = rawdata;
   return a_post_est;
 }
