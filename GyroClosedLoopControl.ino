@@ -130,17 +130,6 @@ STATE execution()
 {
     STATE return_state = RUNNING;
 
-    double e, correction_val;
-    // delay(10);
-
-    Gyro();
-
-    (abs(gyroAngleChange) > 2) ? e = 0 : e = gyroAngleChange;
-
-    correction_val = constrain(kp * e + ki * ki_integral, -120, 120);
-
-    ki_integral += e;
-
     BluetoothSerial.print("e:            ");
     BluetoothSerial.println(e);
     BluetoothSerial.print("correction:   ");
@@ -149,12 +138,45 @@ STATE execution()
     BluetoothSerial.println(ki_integral);
     BluetoothSerial.println(" ");
 
-    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
-    left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
-    right_rear_motor.writeMicroseconds(1500 - speed_val);
-    right_font_motor.writeMicroseconds(1500 - speed_val);
+    ClosedLoopStaph(speed_val);
 
     return return_state;
+}
+
+void ClosedLoopStaph(int speed_val)
+{
+  double e, correction_val;
+
+  Gyro();
+
+  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+
+  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+
+  ki_integral += e;
+
+  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+  left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
+  right_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+}
+
+void ClosedLoopStraight(int speed_val)
+{
+  double e, correction_val;
+
+  Gyro();
+
+  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+
+  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+
+  ki_integral += e;
+
+  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+  left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
+  right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
 }
 
 STATE stopping()
