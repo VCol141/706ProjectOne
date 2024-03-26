@@ -142,16 +142,22 @@ double sensor_noise_gyro = 5;
 double process_noise_gyro = 5;
 
 // Control Loop
-// Control Loop
 
-#define CONTROL_CONSTRAINT 120
-double kp = 5;
-double ki = 0;
-double kd = 0;
+#define CONTROL_CONSTRAINT_GYRO 120
+double kp_gyro = 5;
+double ki_gyro = 0;
 
-double ki_integral = 0;
+double ki_integral_gyro = 0;
 
 int pos = 0;
+
+#define CONTROL_CONSTRAINT_SONAR 120
+double kp_sonar = 5;
+double ki_sonar = 0;
+
+double ki_integral_sonar = 0;
+
+
 void setup(void)
 {
   BluetoothSerial.begin(115200);
@@ -886,22 +892,42 @@ double KalmanGyro(double rawdata){   // Kalman Filter
   return a_post_est;
 }
 
+double KalmanSonar(double rawdata){   // Kalman Filter
+  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+
+  a_priori_var = last_var_sonar + process_noise_sonar; 
+
+  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
+  a_post_est = prev_val_sonar + kalman_gain*(rawdata-prev_val_sonar);
+  a_post_var = (1 * kalman_gain)*a_priori_var;
+  last_var_sonar = a_post_var;
+  prev_val_sonar = rawdata;
+  return a_post_est;
+}
+
 void ClosedLoopStaph(int speed_val)
-{
-  double e, correction_val;
+    double e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
 
-  Gyro();
+    Gyro();
+    delay(10);
+    Sonar();
 
-  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+    (abs(gyroAngleChange) > 3) ? e_gyro = 0 : e_gyro = gyroAngleChange;
 
-  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+    e_sonar = sonar_dist - sonar_cm;
 
-  ki_integral += e;
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
-  left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
-  left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
-  right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
-  right_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -CONTROL_CONSTRAINT_SONAR, CONTROL_CONSTRAINT_SONAR);
+
+    ki_integral_gyro += e_gyro;
+    ki_integral_sonar += e_sonar;
+
+
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
 }
 
 void ClosedLoopStraight(int speed_val)
@@ -912,9 +938,9 @@ void ClosedLoopStraight(int speed_val)
 
   (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
 
-  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
+  correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
-  ki_integral += e;
+  ki_integral_gyro += e;
 
   left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
   left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);

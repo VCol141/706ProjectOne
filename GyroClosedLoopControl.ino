@@ -51,12 +51,12 @@ enum STATE
 };
 
 // Control Loop
-double kp_1 = 25;
-double ki_1 = 10;
+double kp_gyro = 25;
+double ki_gyro = 10;
 
-double ki_integral_1 = 0;
+double ki_integral_gyro = 0;
 
-#define CONTROL_CONSTRAINT_1 100
+#define CONTROL_CONSTRAINT_GYRO 100
 
 // Gyro Comp
 float InitialVoltage;
@@ -73,10 +73,10 @@ const unsigned int MAX_DIST = 23200;
 double sonar_dist = 0;
 
 // Control Loop
-double kp_2 = 15;
-double ki_2 = 0.5;
+double kp_sonar = 15;
+double ki_sonar = 0.5;
 
-double ki_integral_2 = 0;
+double ki_integral_sonar = 0;
 
 //Kalman variables sonar
 double prev_val_sonar;
@@ -84,7 +84,7 @@ double last_var_sonar = 999;
 double sensor_noise_sonar = 10;
 double process_noise_sonar = 1;
 
-#define CONTROL_CONSTRAINT_2 150
+#define CONTROL_CONSTRAINT_SONAR 150
 
 
 void setup(void)
@@ -172,35 +172,35 @@ STATE execution()
 
 void ClosedLoopStaph(int speed_val)
 {
-    double e_1, e_2, correction_val_1, correction_val_2;
+    double e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
 
     Gyro();
     delay(10);
     Sonar();
 
-    (abs(gyroAngleChange) > 3) ? e_1 = 0 : e_1 = gyroAngleChange;
+    (abs(gyroAngleChange) > 3) ? e_gyro = 0 : e_gyro = gyroAngleChange;
 
-    e_2 = sonar_dist - sonar_cm;
+    e_sonar = sonar_dist - sonar_cm;
 
-    correction_val_1 = constrain(kp_1 * e_1 + ki_1 * ki_integral_1, -CONTROL_CONSTRAINT_1, CONTROL_CONSTRAINT_1);
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
-    correction_val_2 = constrain(kp_2 * e_2 + ki_2 * ki_integral_2, -CONTROL_CONSTRAINT_2, CONTROL_CONSTRAINT_2);
+    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -CONTROL_CONSTRAINT_SONAR, CONTROL_CONSTRAINT_SONAR);
 
-    ki_integral_1 += e_1;
-    ki_integral_2 += e_2;
+    ki_integral_gyro += e_gyro;
+    ki_integral_sonar += e_sonar;
 
 
-    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_1 - correction_val_2);
-    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_1 - correction_val_1);
-    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_1 + correction_val_2);
-    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_1 + correction_val_2);
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
 
     BluetoothSerial.print("e:                     ");
-    BluetoothSerial.println(e_2);
+    BluetoothSerial.println(e_sonar);
     BluetoothSerial.print("correction:            ");
-    BluetoothSerial.println(correction_val_2);
+    BluetoothSerial.println(correction_val_sonar);
     BluetoothSerial.print("ki:                    ");
-    BluetoothSerial.println(ki_integral_2);
+    BluetoothSerial.println(ki_integral_sonar);
     BluetoothSerial.print("current reading:       ");
     BluetoothSerial.println(sonar_cm);
     BluetoothSerial.print("Aimed reading:         ");
@@ -215,9 +215,9 @@ void ClosedLoopStraight(int speed_val)
 
     (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
 
-    correction_val = constrain(kp_1 * e + ki_1 * ki_integral_1, -CONTROL_CONSTRAINT_1, CONTROL_CONSTRAINT_1);
+    correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
-    ki_integral_1 += e;
+    ki_integral_gyro += e;
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
@@ -229,7 +229,7 @@ void ClosedLoopStraight(int speed_val)
     BluetoothSerial.print("correction:   ");
     BluetoothSerial.println(correction_val);
     BluetoothSerial.print("ki:           ");
-    BluetoothSerial.println(ki_integral_1);
+    BluetoothSerial.println(ki_integral_gyro);
     BluetoothSerial.println(" ");
 }
 
