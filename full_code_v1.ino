@@ -144,7 +144,7 @@ double process_noise_gyro = 5;
 // Control Loop
 // Control Loop
 
-#define CONTROL_CONSTRAINT 100
+#define CONTROL_CONSTRAINT 120
 double kp = 5;
 double ki = 0;
 double kd = 0;
@@ -886,16 +886,16 @@ double KalmanGyro(double rawdata){   // Kalman Filter
   return a_post_est;
 }
 
-void ClosedLoopForward()
+void ClosedLoopForward(int speed_val)
 {
   double e, correction_val;
   // delay(10);
 
   Gyro();
 
-  (abs(gyroAngleChange) > 2) ? e = 0 : e = gyroAngleChange;
+  (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
 
-  correction_val = constrain(kp * e + ki * ki_integral, -120, 120);
+  correction_val = constrain(kp * e + ki * ki_integral, -CONTROL_CONSTRAINT, CONTROL_CONSTRAINT);
 
   ki_integral += e;
 
@@ -909,8 +909,8 @@ void ClosedLoopForward()
 
   left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
   left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
-  right_rear_motor.writeMicroseconds(1500 - speed_val);
-  right_font_motor.writeMicroseconds(1500 - speed_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val + correction_val);
+  right_font_motor.writeMicroseconds(1500 - speed_val + correction_val);
 }
 
 void GyroSetup()
