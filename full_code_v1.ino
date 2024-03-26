@@ -909,8 +909,7 @@ void ClosedLoopStaph(int speed_val)
     double e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
 
     Gyro();
-    delay(10);
-    Sonar();
+    HC_SR04_range();
 
     (abs(gyroAngleChange) > 3) ? e_gyro = 0 : e_gyro = gyroAngleChange;
 
