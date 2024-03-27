@@ -783,13 +783,8 @@ double average_array(double* input_array, double last_average){
       count++;
     }
   }
-  //If no valid values were read, set the average to 0
-  if (sum == 0){
-    return 0;
-  }
-  else{
-    return sum/count;
-  }
+
+  return (sum == 0) ? 0 : sum / count;
 }
 
 
