@@ -72,6 +72,9 @@ const unsigned int MAX_DIST = 23200;
 
 double sonar_dist = 0;
 
+double sonar_values[20];
+double sonar_average;
+
 // Control Loop
 double kp_sonar = 15;
 double ki_sonar = 0.5;
@@ -173,14 +176,20 @@ STATE execution()
 void ClosedLoopStaph(int speed_val)
 {
     double e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
+    double sonar_val_avg;
 
     Gyro();
-    delay(10);
-    Sonar();
+    
+    for (int i = 0; i < 20; i++)
+    {
+        sonar_values[i] = Sonar();
+    }
+
+    average_array();
 
     (abs(gyroAngleChange) > 3) ? e_gyro = 0 : e_gyro = gyroAngleChange;
 
-    e_sonar = sonar_dist - sonar_cm;
+    e_sonar = sonar_dist - sonar_average;
 
     correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
@@ -353,4 +362,16 @@ double KalmanSonar(double rawdata){   // Kalman Filter
   last_var_sonar = a_post_var;
   prev_val_sonar = rawdata;
   return a_post_est;
+}
+
+double average_array()
+{
+  double sum = 0;
+  
+  for (int i = 0; i <= 20; i++){
+    // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
+    sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - 20, sonar_average + 20))
+  }
+
+  return (sum == 0) ? 0 : sum / 20;
 }

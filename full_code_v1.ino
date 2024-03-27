@@ -774,17 +774,13 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
 
 double average_array(double* input_array, double last_average){
   double sum = 0;
-  int count = 0;
   
-  for (int i = 0; i<= iterations;i++){
+  for (int i = 0; i<= iterations; i++){
     // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-    if ((input_array[i] > last_average-50 && input_array[i] <last_average+50) || (last_average == 0 && (input_array[i] > 0 && input_array[i] <1000))){ 
-      sum += input_array[i];
-      count++;
-    }
+    sum += (last_average == 0 ? input_array[i] : constrain(input_array[i], last_average - 20, last_average + 20))
   }
 
-  return (sum == 0) ? 0 : sum / count;
+  return (sum == 0) ? 0 : sum / iterations;
 }
 
 
