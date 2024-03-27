@@ -82,7 +82,6 @@ float sonar_range = 20;
 // Control Loop
 float kp_sonar = 15;
 float ki_sonar = 0.5;
-
 float ki_integral_sonar = 0;
 
 //Kalman variables sonar
@@ -96,7 +95,6 @@ float process_noise_sonar = 1;
 // Control Loop Angle Turn
 float kp_angle = 0;
 float ki_angle = 0;
-
 float ki_integral_angle = 0;
 
 void setup(void)
@@ -119,7 +117,6 @@ void setup(void)
 
 void loop(void)
 {
-
     static STATE machine_state = STARTUP;
 
     switch (machine_state)
@@ -142,7 +139,6 @@ STATE initialising()
     int i;
     float sum1 = 0;
     float sum2 = 0;
-
 
     // Motor Initialising
     left_font_motor.attach(left_front);   // attaches the servo on pin left_front to turn Vex Motor Controller 29 On
@@ -171,7 +167,6 @@ STATE initialising()
     sonar_dist = sonar_average;
 
     sonar_average = 0;
-
 
     return RUNNING;
 }
@@ -227,7 +222,6 @@ void ClosedLoopStaph(int speed_val)
 
     ki_integral_gyro += e_gyro;
     ki_integral_sonar += e_sonar;
-
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
     left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
@@ -301,7 +295,6 @@ void Gyro()
 
     float current_val = analogRead(gyroPin);
 
-
     // convert the 0-1023 signal to 0-5v
     gyroRate = (KalmanGyro(current_val) * 5.00) / 1023;
 
@@ -344,7 +337,6 @@ void Sonar()
 
     // Measure how long the echo pin was held high (pulse width)
     // Note: the micros() counter will overflow after ~70 min
-
     t1 = micros();
     while ( digitalRead(ECHO_PIN) == 1)
     {
@@ -368,39 +360,39 @@ void Sonar()
 }
 
 double KalmanGyro(double rawdata){   // Kalman Filter
-  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+    double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
-  a_priori_var = last_var_gyro + process_noise_gyro; 
+    a_priori_var = last_var_gyro + process_noise_gyro; 
 
-  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_gyro);
-  a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
-  a_post_var = (1- kalman_gain)*a_priori_var;
-  last_var_gyro = a_post_var;
-  prev_val_gyro = rawdata;
-  return a_post_est;
+    kalman_gain = a_priori_var/(a_priori_var+sensor_noise_gyro);
+    a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
+    a_post_var = (1- kalman_gain)*a_priori_var;
+    last_var_gyro = a_post_var;
+    prev_val_gyro = rawdata;
+    return a_post_est;
 }
 
 double KalmanSonar(double rawdata){   // Kalman Filter
-  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+    double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
-  a_priori_var = last_var_sonar + process_noise_sonar; 
+    a_priori_var = last_var_sonar + process_noise_sonar; 
 
-  kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
-  a_post_est = prev_val_sonar + kalman_gain*(rawdata-prev_val_sonar);
-  a_post_var = (1 * kalman_gain)*a_priori_var;
-  last_var_sonar = a_post_var;
-  prev_val_sonar = rawdata;
-  return a_post_est;
+    kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
+    a_post_est = prev_val_sonar + kalman_gain*(rawdata-prev_val_sonar);
+    a_post_var = (1 * kalman_gain)*a_priori_var;
+    last_var_sonar = a_post_var;
+    prev_val_sonar = rawdata;
+    return a_post_est;
 }
 
 double average_array()
 {
-  double sum = 0;
+    double sum = 0;
   
-  for (int i = 0; i <= sonar_MA_n; i++){
-    // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-    sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range))
-  }
+    for (int i = 0; i <= sonar_MA_n; i++){
+        // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
+        sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range))
+    }
 
-  return (sum == 0) ? 0 : sum / sonar_MA_n;
+    return (sum == 0) ? 0 : sum / sonar_MA_n;
 }
