@@ -36,10 +36,11 @@ int gyroVal = 0;
 float gyroZeroVoltage = 0;
 float gyroRate = 0;
 float gyroAngleChange = 0;
+float gyroAngle = 0;
 
 byte serialRead = 0;
 
-double gyroTime = 0;
+float gyroTime = 0;
 
 HardwareSerial *SerialCom;
 
@@ -51,10 +52,10 @@ enum STATE
 };
 
 // Control Loop
-double kp_gyro = 25;
-double ki_gyro = 10;
+float kp_gyro = 25;
+float ki_gyro = 10;
 
-double ki_integral_gyro = 0;
+float ki_integral_gyro = 0;
 
 #define CONTROL_CONSTRAINT_GYRO 100
 
@@ -62,33 +63,41 @@ double ki_integral_gyro = 0;
 float InitialVoltage;
 
 //Kalman variables
-double prev_val_gyro;
-double last_var_gyro = 999;
-double sensor_noise_gyro = 10;
-double process_noise_gyro = 1;
+float prev_val_gyro;
+float last_var_gyro = 999;
+float sensor_noise_gyro = 10;
+float process_noise_gyro = 1;
 
-double sonar_cm;
+float sonar_cm;
 const unsigned int MAX_DIST = 23200;
 
-double sonar_dist = 0;
+float sonar_dist = 0;
 
-double sonar_values[20];
-double sonar_average;
+
+int sonar_MA_n = 20;
+float sonar_values[sonar_MA_n];
+float sonar_average;
+float sonar_range = 20;
 
 // Control Loop
-double kp_sonar = 15;
-double ki_sonar = 0.5;
+float kp_sonar = 15;
+float ki_sonar = 0.5;
 
-double ki_integral_sonar = 0;
+float ki_integral_sonar = 0;
 
 //Kalman variables sonar
-double prev_val_sonar;
-double last_var_sonar = 999;
-double sensor_noise_sonar = 10;
-double process_noise_sonar = 1;
+float prev_val_sonar;
+float last_var_sonar = 999;
+float sensor_noise_sonar = 10;
+float process_noise_sonar = 1;
 
 #define CONTROL_CONSTRAINT_SONAR 150
 
+// Control Loop Angle Turn
+float kp_angle = 0;
+float ki_angle = 0;
+
+float ki_integral_angle = 0;
 
 void setup(void)
 {
@@ -151,15 +160,18 @@ STATE initialising()
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
-    for (i = 0; i < 100; i++)
+    for (int i = 0; i < sonar_MA_n; i++)
     {
         Sonar();
-        sonar_dist = sonar_cm;
-        sum2 += sonar_dist;
-        delay(5);
+        sonar_values[i] = sonar_cm;
     }
 
-    sonar_dist = sum2 / 100;
+    average_array();
+
+    sonar_dist = sonar_average;
+
+    sonar_average = 0;
+
 
     return RUNNING;
 }
@@ -173,16 +185,34 @@ STATE execution()
     return return_state;
 }
 
+void ClosedLoopTurn(float speed, float angle_val)
+{
+    float e, correction_val;
+
+    Gyro();
+
+    e = angle_val - gyroAngle;
+
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -200, 200);
+
+    ki_integral_angle += e;
+
+    left_font_motor.writeMicroseconds(1500 + correction_val);
+    left_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_font_motor.writeMicroseconds(1500 + correction_val);
+}
+
 void ClosedLoopStaph(int speed_val)
 {
-    double e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
-    double sonar_val_avg;
+    float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
 
     Gyro();
     
-    for (int i = 0; i < 20; i++)
+    for (int i = 0; i < sonar_MA_n; i++)
     {
-        sonar_values[i] = Sonar();
+        Sonar();
+        sonar_values[i] = sonar_cm;
     }
 
     average_array();
@@ -218,7 +248,7 @@ void ClosedLoopStaph(int speed_val)
 
 void ClosedLoopStraight(int speed_val)
 {
-    double e, correction_val;
+    float e, correction_val;
 
     Gyro();
 
@@ -259,7 +289,6 @@ STATE stopping()
 
 void Gyro()
 {
-
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
     {
@@ -270,7 +299,7 @@ void Gyro()
         }
     }
 
-    double current_val = analogRead(gyroPin);
+    float current_val = analogRead(gyroPin);
 
 
     // convert the 0-1023 signal to 0-5v
@@ -368,10 +397,10 @@ double average_array()
 {
   double sum = 0;
   
-  for (int i = 0; i <= 20; i++){
+  for (int i = 0; i <= sonar_MA_n; i++){
     // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-    sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - 20, sonar_average + 20))
+    sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range))
   }
 
-  return (sum == 0) ? 0 : sum / 20;
+  return (sum == 0) ? 0 : sum / sonar_MA_n;
 }
