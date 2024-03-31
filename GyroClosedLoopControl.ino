@@ -210,8 +210,6 @@ void ClosedLoopTurn(float speed, float angle_val)
 
     ki_integral_angle += e;
 
-    gyroAngle += gyroAngleChange;
-
     left_font_motor.writeMicroseconds(1500 + correction_val);
     left_rear_motor.writeMicroseconds(1500 + correction_val);
     right_rear_motor.writeMicroseconds(1500 + correction_val);
@@ -323,6 +321,7 @@ ISR(TIMER5_COMPA_vect)
     {
         // we are running a loop in T (of T/1000 second).
         gyroAngleChange = angularVelocity / (1000 / (millis() - gyroTime));
+        gyroAngle += gyroAngleChange;
     }
 
     gyroTime = millis();    // If timer is adequate, remove this and 'millis() - gyroTime' and replace with period determined
