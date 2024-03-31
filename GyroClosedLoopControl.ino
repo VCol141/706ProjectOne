@@ -75,7 +75,7 @@ float sonar_dist = 0;
 
 
 int sonar_MA_n = 20;
-float sonar_values[sonar_MA_n];
+float sonar_values[20];
 float sonar_average;
 float sonar_range = 20;
 
@@ -402,9 +402,10 @@ double average_array()
 {
     double sum = 0;
   
-    for (int i = 0; i <= sonar_MA_n; i++){
+    for (int i = 0; i <= sonar_MA_n; i++)
+    {
         // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-        sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range))
+        sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range));
     }
 
     return (sum == 0) ? 0 : sum / sonar_MA_n;
