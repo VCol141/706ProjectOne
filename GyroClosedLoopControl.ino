@@ -97,8 +97,12 @@ float kp_angle = 0;
 float ki_angle = 0;
 float ki_integral_angle = 0;
 
+// Timer values
+
 void setup(void)
 {
+
+    cli();
     BluetoothSerial.begin(115200);
 
     pinMode(gyroPin, INPUT);
@@ -112,6 +116,20 @@ void setup(void)
     digitalWrite(TRIG_PIN, LOW);
     pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
 
+    // Timer Set up
+    TCCR5A = 0;// set entire TCCR2A register to 0
+    TCCR5B = 0;// same for TCCR2B
+    TCNT5  = 0;//initialize counter value to 0
+    // set compare match register for 8khz increments
+    OCR5A = (16*10^6) / (10 * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
+    // turn on CTC mode
+    TCCR5A |= (1 << WGM51);
+    // Set CS21 bit for 8 prescaler
+    TCCR5B |= (1 << CS52);   
+    // enable timer compare interrupt
+    TIMSK5 |= (1 << OCIE5A);
+
+    sei();
     delay(1000); // settling time but no really needed
 }
 
@@ -184,13 +202,13 @@ void ClosedLoopTurn(float speed, float angle_val)
 {
     float e, correction_val;
 
-    Gyro();
-
     e = angle_val - gyroAngle;
 
     correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -200, 200);
 
     ki_integral_angle += e;
+
+    gyroAngle += gyroAngleChange;
 
     left_font_motor.writeMicroseconds(1500 + correction_val);
     left_rear_motor.writeMicroseconds(1500 + correction_val);
@@ -201,8 +219,6 @@ void ClosedLoopTurn(float speed, float angle_val)
 void ClosedLoopStaph(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
-
-    Gyro();
     
     for (int i = 0; i < sonar_MA_n; i++)
     {
@@ -244,8 +260,6 @@ void ClosedLoopStraight(int speed_val)
 {
     float e, correction_val;
 
-    Gyro();
-
     (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
 
     correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
@@ -281,7 +295,7 @@ STATE stopping()
     return FINISHED;
 }
 
-void Gyro()
+ISR(TIMER5_COMPA_vect)
 {
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
