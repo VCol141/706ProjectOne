@@ -309,10 +309,8 @@ ISR(TIMER5_COMPA_vect)
         }
     }
 
-    float current_val = analogRead(gyroPin);
-
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (KalmanGyro(current_val) * 5.00) / 1023;
+    gyroRate = (KalmanGyro(analogRead(gyroPin)) * 5.00) / 1023;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
@@ -327,7 +325,7 @@ ISR(TIMER5_COMPA_vect)
         gyroAngleChange = angularVelocity / (1000 / (millis() - gyroTime));
     }
 
-    gyroTime = millis();
+    gyroTime = millis();    // If timer is adequate, remove this and 'millis() - gyroTime' and replace with period determined
 }
 
 void Sonar()
