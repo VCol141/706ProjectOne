@@ -98,33 +98,35 @@ float ki_angle = 0;
 float ki_integral_angle = 0;
 
 // Timer values
+#define TIMER_FREQUENCY 10
 
 void setup(void)
 {
 
-    cli();
-    BluetoothSerial.begin(115200);
+    cli();  // Disable interrupts
 
-    pinMode(gyroPin, INPUT);
+    BluetoothSerial.begin(115200);  // Initiate Bluetooth serial to output data
+
+    pinMode(gyroPin, INPUT);    // Initiate pins
     pinMode(A14, INPUT);
+    pinMode(TRIG_PIN, OUTPUT);
+    digitalWrite(TRIG_PIN, LOW);
+    pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
 
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
 
-    pinMode(TRIG_PIN, OUTPUT);
-    digitalWrite(TRIG_PIN, LOW);
-    pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
-
     // Timer Set up
     TCCR5A = 0;// set entire TCCR2A register to 0
     TCCR5B = 0;// same for TCCR2B
     TCNT5  = 0;//initialize counter value to 0
-    // set compare match register for 8khz increments
-    OCR5A = (16*10^6) / (10 * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
+    
+    // Set timer compare value
+    OCR5A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
     // turn on CTC mode
     TCCR5A |= (1 << WGM51);
-    // Set CS21 bit for 8 prescaler
+    // Set CS21 bit for 256 prescaler
     TCCR5B |= (1 << CS52);   
     // enable timer compare interrupt
     TIMSK5 |= (1 << OCIE5A);
