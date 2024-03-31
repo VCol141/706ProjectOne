@@ -206,7 +206,7 @@ void ClosedLoopTurn(float speed, float angle_val)
 
     e = angle_val - gyroAngle;
 
-    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -200, 200);
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
 
     ki_integral_angle += e;
 
