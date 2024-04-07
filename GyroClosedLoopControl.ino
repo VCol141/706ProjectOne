@@ -98,7 +98,8 @@ float ki_angle = 0;
 float ki_integral_angle = 0;
 
 // Timer values
-#define TIMER_FREQUENCY 100
+#define TIMER_FREQUENCY 250
+#define TIMER_COMPENSATION_VAL 25
 int timerCount = 0;
 
 void setup(void)
@@ -128,7 +129,7 @@ void setup(void)
     // turn on CTC mode
     TCCR2A |= (1 << WGM21);
     // Set CS21 bit for 256 prescaler
-    TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);   
+    TCCR2B |= (1 << CS22) | (1 << CS21);   
     // enable timer compare interrupt
     TIMSK2 |= (1 << OCIE2A);
 
@@ -298,9 +299,9 @@ STATE stopping()
 
 ISR(TIMER2_COMPA_vect)
 {
-  if (timerCount == 10) Gyro();
+  if (timerCount == TIMER_COMPENSATION_VAL) Gyro();
 
-  (timerCount >= 10) ? timerCount = 0 : timerCount ++;
+  (timerCount >= TIMER_COMPENSATION_VAL) ? timerCount = 0 : timerCount ++;
 }
 
 void Gyro()
