@@ -118,18 +118,18 @@ void setup(void)
     SerialCom->begin(115200);
 
     // Timer Set up
-    TCCR5A = 0;// set entire TCCR2A register to 0
-    TCCR5B = 0;// same for TCCR2B
-    TCNT5  = 0;//initialize counter value to 0
+    TCCR2A = 0;// set entire TCCR2A register to 0
+    TCCR2B = 0;// same for TCCR2B
+    TCNT2  = 0;//initialize counter value to 0
     
     // Set timer compare value
-    OCR5A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
+    OCR2A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
     // turn on CTC mode
-    TCCR5A |= (1 << WGM51);
+    TCCR2A |= (1 << WGM51);
     // Set CS21 bit for 256 prescaler
-    TCCR5B |= (1 << CS52);   
+    TCCR2B |= (1 << CS52);   
     // enable timer compare interrupt
-    TIMSK5 |= (1 << OCIE5A);
+    TIMSK2 |= (1 << OCIE5A);
 
     sei();
     delay(1000); // settling time but no really needed
@@ -295,7 +295,7 @@ STATE stopping()
     return FINISHED;
 }
 
-ISR(TIMER5_COMPA_vect)
+ISR(TIMER2_COMPA_vect)
 {
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
