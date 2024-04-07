@@ -230,7 +230,7 @@ void ClosedLoopStaph(int speed_val)
 
     average_array();
 
-    (abs(gyroAngleChange) > 3) ? e_gyro = 0 : e_gyro = gyroAngleChange;
+    e_gyro = gyroAngleChange;
 
     e_sonar = sonar_dist - sonar_average;
 
@@ -262,7 +262,7 @@ void ClosedLoopStraight(int speed_val)
 {
     float e, correction_val;
 
-    (abs(gyroAngleChange) > 3) ? e = 0 : e = gyroAngleChange;
+    e = gyroAngleChange;
 
     correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
