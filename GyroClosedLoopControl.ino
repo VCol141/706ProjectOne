@@ -98,7 +98,8 @@ float ki_angle = 0;
 float ki_integral_angle = 0;
 
 // Timer values
-#define TIMER_FREQUENCY 10
+#define TIMER_FREQUENCY 100
+int timerCount = 0;
 
 void setup(void)
 {
@@ -125,11 +126,11 @@ void setup(void)
     // Set timer compare value
     OCR2A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
     // turn on CTC mode
-    TCCR2A |= (1 << WGM51);
+    TCCR2A |= (1 << WGM21);
     // Set CS21 bit for 256 prescaler
-    TCCR2B |= (1 << CS52);   
+    TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);   
     // enable timer compare interrupt
-    TIMSK2 |= (1 << OCIE5A);
+    TIMSK2 |= (1 << OCIE2A);
 
     sei();
     delay(1000); // settling time but no really needed
@@ -296,6 +297,13 @@ STATE stopping()
 }
 
 ISR(TIMER2_COMPA_vect)
+{
+  if (timerCount == 10) Gyro();
+
+  (timerCount >= 10) ? timerCount = 0 : timerCount ++;
+}
+
+void Gyro()
 {
     // put your main code here, to run repeatedly:
     if (Serial.available()) // Check for input from terminal
