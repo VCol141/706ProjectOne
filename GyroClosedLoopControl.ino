@@ -302,11 +302,19 @@ ISR(TIMER2_COMPA_vect)
 
     timerCount++;
 
+    PrintTest(timerCount);
+
     if (timerCount == TIMER_COMPENSATION_VAL) 
     {
         Gyro(); 
         timerCount = 0;
     }
+}
+
+void PrintTest(int val)
+{
+    BluetoothSerial.print("Printing: ");
+    BluetoothSerial.println(val);
 }
 
 void Gyro()
