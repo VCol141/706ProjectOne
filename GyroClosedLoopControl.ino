@@ -333,9 +333,12 @@ void Gyro()
         gyroAngle += gyroAngleChange;
     }
 
+    BluetoothSerial.print("Anglew Change: ");
     BluetoothSerial.println(gyroAngleChange);
+    BluetoothSerial.print("Delta T:       ");
+    BluetoothSerial.println(millis() - gyroTime);
 
-
+    gyroTime = millis();
 }
 
 void Sonar()
