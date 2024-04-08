@@ -100,6 +100,10 @@ float ki_integral_angle = 0;
 // Timer values
 #define TIMER_FREQUENCY 500
 #define TIMER_COMPENSATION_VAL 5
+
+int timer_frequency = 500;
+int timer_compensation = 5;
+
 int timerCount = 0;
 
 void setup(void)
@@ -125,7 +129,7 @@ void setup(void)
     TCNT2  = 0;//initialize counter value to 0
     
     // Set timer compare value
-    OCR2A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
+    OCR2A = (16*10^6) / (timer_frequency * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
     // turn on CTC mode
     TCCR2A |= (1 << WGM21);
     // Set CS21 bit for 256 prescaler
@@ -301,7 +305,7 @@ ISR(TIMER2_COMPA_vect)
 {
     timerCount++;
 
-    if (timerCount == TIMER_COMPENSATION_VAL) { Gyro(); }
+    if (timerCount == timer_compensation) { Gyro(); }
 }
 
 void Gyro()
@@ -329,7 +333,7 @@ void Gyro()
     if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        gyroAngleChange = (angularVelocity * TIMER_COMPENSATION_VAL) / (1000 * TIMER_FREQUENCY);
+        gyroAngleChange = (angularVelocity * timer_compensation) / (1000 * timer_frequency);
         gyroAngle += gyroAngleChange;
     }
 
