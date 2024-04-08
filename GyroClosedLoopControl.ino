@@ -299,34 +299,22 @@ STATE stopping()
 
 ISR(TIMER2_COMPA_vect)
 {
-
     timerCount++;
 
-    PrintTest(timerCount);
-
-    if (timerCount == TIMER_COMPENSATION_VAL) 
-    {
-        Gyro();
-    }
-}
-
-void PrintTest(int val)
-{
-    BluetoothSerial.print("Printing: ");
-    BluetoothSerial.println(val);
+    if (timerCount == TIMER_COMPENSATION_VAL) { Gyro(); }
 }
 
 void Gyro()
 {
     // put your main code here, to run repeatedly:
-    /*if (Serial.available()) // Check for input from terminal
+    if (Serial.available()) // Check for input from terminal
     {
         serialRead = Serial.read(); // Read input
         if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
         {
             Serial.end(); // end the serial communication to display the sensor data on monitor
         }
-    }*/
+    }
 
     // convert the 0-1023 signal to 0-5v
     gyroRate = (KalmanGyro(analogRead(gyroPin)) * 5.00) / 1023;
@@ -341,13 +329,15 @@ void Gyro()
     if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        gyroAngleChange = angularVelocity / (1000 / (1 / (TIMER_FREQUENCY / TIMER_COMPENSATION_VAL)));
+        gyroAngleChange = (angularVelocity * TIMER_COMPENSATION_VAL) / (1000 * TIMER_FREQUENCY);
         gyroAngle += gyroAngleChange;
     }
 
-    BluetoothSerial.print("Anglew Change: ");
+    BluetoothSerial.print("Anglew Change:      ");
     BluetoothSerial.println(gyroAngleChange);
-    BluetoothSerial.print("Delta T:       ");
+    BluetoothSerial.print("Delta T Actual:     ");
+    BluetoothSerial.println(millis() - gyroTime);
+    BluetoothSerial.print("Delta T theretical: ");
     BluetoothSerial.println(millis() - gyroTime);
 
     gyroTime = millis();
