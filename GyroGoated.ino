@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 // #define NO_READ_GYRO  //Uncomment of GYRO is not attached.
-#define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
+// #define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
 //#define NO_BATTERY_V_OK //Uncomment of BATTERY_V_OK if you do not care about battery damage.
 
 // Serial Data input pin
@@ -46,7 +46,7 @@ const byte right_front = 51;
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
 
-double sonar_cm;
+
 
 
 //Mapping variables
@@ -130,6 +130,12 @@ double wall_array[4];
 double MR1var, MR2var, LR1var, LR3var;
 double sensor_noise = 1;
 double process_noise = 10;
+
+//Sonar values
+double sonar_cm;
+float straight_time = 0;
+float ki_integral_sonar = 0;
+float sonar_dist = 0;
 
 //Gyro turn variables
 float gyro_aim;
@@ -234,11 +240,11 @@ STATE mapping(){
 
   // read_IR_sensors();
   // filter_IR_reading();
-  // HC_SR04_range();
+  HC_SR04_range();
   Gyro();
   //Add sonar value to sonar array
-  // ultraArray[array_index] = sonar_cm;
-  // sonar_average = average_array(ultraArray, sonar_average);
+  ultraArray[array_index] = sonar_cm;
+  sonar_average = average_array(ultraArray, sonar_average);
   
 
   // BluetoothSerial.print("SONAR AVERAGE");
@@ -283,27 +289,32 @@ STATE mapping(){
       if (abs(error) >= 360){
         BluetoothSerial.println("TURNING STOPPED");
         stop();
-        delay(5000);
+        delay(2000);
         gyroAngle = 0;
+        straight_time = millis();
         map_state = FINDING_CORNER;
         
-      }
-      else{
-        map_state = TURNING;
       }
       break;
     case FINDING_CORNER:
       ClosedLoopStraight(200);
+      if (millis()-straight_time >3000){
+        stop();
+        delay(2000);
+        sonar_dist = sonar_average;
+        map_state = STRAFING;
+        straight_time = millis();
+      }
       break;
-    }
-    // case STRAFING:
-    //   if(strafe_dir == LEFT){
-    //     strafe_left();
-    //   }else{
-    //     strafe_right();
-    //   }
-    //   break;
-  
+    case STRAFING:
+      if (millis()-straight_time >4000){
+        stop();;
+      }
+      else{
+        ClosedLoopStaph(200);
+      }
+      break;
+  }
       
 
   //   
@@ -875,16 +886,8 @@ void ClosedLoopStaph(int speed_val)
     float e, correction_val;
     float kp_gyro = 40;
     float ki_gyro = 10;
-    float kp_sonar = 0;
-    float ki_sonar = 0;
-
-    for (int i = 0; i < sonar_MA_n; i++)
-    {
-        Sonar();
-        sonar_values[i] = sonar_cm;
-    }
-
-    average_array();
+    float kp_sonar = 15;
+    float ki_sonar = 0.5;
 
     e_gyro = gyroAngleChange;
 
@@ -892,7 +895,7 @@ void ClosedLoopStaph(int speed_val)
 
     correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -100, 100);
 
-    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -CONTROL_CONSTRAINT_SONAR, CONTROL_CONSTRAINT_SONAR);
+    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -150, 150);
 
     ki_integral_gyro += e_gyro;
     ki_integral_sonar += e_sonar;
