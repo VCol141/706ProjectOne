@@ -125,7 +125,7 @@ void setup(void)
     TCNT2  = 0;//initialize counter value to 0
     
     // Set timer compare value
-    OCR2A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1;// = (16*10^6) / (8000*8) - 1 (must be <256)
+    OCR2A = (16*10^6) / (TIMER_FREQUENCY * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
     // turn on CTC mode
     TCCR2A |= (1 << WGM21);
     // Set CS21 bit for 256 prescaler
@@ -329,11 +329,13 @@ void Gyro()
     if (angularVelocity >= 1.50 || angularVelocity <= -1.50)
     {
         // we are running a loop in T (of T/1000 second).
-        gyroAngleChange = angularVelocity / (1000 / (millis() - gyroTime));
+        gyroAngleChange = angularVelocity / (1000 / (1 / (TIMER_FREQUENCY / TIMER_COMPENSATION_VAL)));
         gyroAngle += gyroAngleChange;
     }
 
-    gyroTime = millis();    // If timer is adequate, remove this and 'millis() - gyroTime' and replace with period determined
+    BluetoothSerial.println(gyroAngleChange);
+
+
 }
 
 void Sonar()
