@@ -197,7 +197,7 @@ STATE execution()
 {
     STATE return_state = RUNNING;
 
-    ClosedLoopStaph(speed_val);
+    delay(10);
 
     return return_state;
 }
