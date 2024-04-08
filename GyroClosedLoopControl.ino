@@ -98,8 +98,8 @@ float ki_angle = 0;
 float ki_integral_angle = 0;
 
 // Timer values
-#define TIMER_FREQUENCY 250
-#define TIMER_COMPENSATION_VAL 25
+#define TIMER_FREQUENCY 500
+#define TIMER_COMPENSATION_VAL 5
 int timerCount = 0;
 
 void setup(void)
