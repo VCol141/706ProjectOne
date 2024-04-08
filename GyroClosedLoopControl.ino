@@ -306,8 +306,7 @@ ISR(TIMER2_COMPA_vect)
 
     if (timerCount == TIMER_COMPENSATION_VAL) 
     {
-        Gyro(); 
-        timerCount = 0;
+        Gyro();
     }
 }
 
@@ -320,14 +319,14 @@ void PrintTest(int val)
 void Gyro()
 {
     // put your main code here, to run repeatedly:
-    if (Serial.available()) // Check for input from terminal
+    /*if (Serial.available()) // Check for input from terminal
     {
         serialRead = Serial.read(); // Read input
         if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
         {
             Serial.end(); // end the serial communication to display the sensor data on monitor
         }
-    }
+    }*/
 
     // convert the 0-1023 signal to 0-5v
     gyroRate = (KalmanGyro(analogRead(gyroPin)) * 5.00) / 1023;
@@ -352,6 +351,8 @@ void Gyro()
     BluetoothSerial.println(millis() - gyroTime);
 
     gyroTime = millis();
+
+    timerCount = 0;
 }
 
 void Sonar()
