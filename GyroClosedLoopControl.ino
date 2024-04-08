@@ -342,7 +342,7 @@ void Gyro()
     BluetoothSerial.print("Delta T Actual:     ");
     BluetoothSerial.println(millis() - gyroTime);
     BluetoothSerial.print("Delta T theretical: ");
-    BluetoothSerial.println(millis() - gyroTime);
+    BluetoothSerial.println(timer_compensation / timer_frequency);
 
     gyroTime = millis();
 
