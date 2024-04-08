@@ -330,7 +330,7 @@ void Gyro()
     float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
 
     // if the angular velocity is less than the threshold, ignore it
-    if (angularVelocity >= 1.50 || angularVelocity <= -1.50 || gyroTimeq != 0)
+    if (angularVelocity >= 1.50 || angularVelocity <= -1.50 || gyroTime != 0)
     {
         // we are running a loop in T (of T/1000 second).
         gyroAngleChange = (angularVelocity * timer_compensation) / (1000 * timer_frequency);
