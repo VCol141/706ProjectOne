@@ -300,20 +300,13 @@ STATE stopping()
 ISR(TIMER2_COMPA_vect)
 {
 
-    (timerCount > TIMER_COMPENSATION_VAL) ? timerCount = 0 : timerCount++;
+    timerCount++;
+
     if (timerCount == TIMER_COMPENSATION_VAL) 
     {
         Gyro(); 
-        BluetoothSerial.println("Gyro Called");
+        timerCount = 0;
     }
-
-    PrintTest(timerCount);
-}
-
-void PrintTest(int val)
-{
-    BluetoothSerial.print("Printing: ");
-    BluetoothSerial.println(val);
 }
 
 void Gyro()
