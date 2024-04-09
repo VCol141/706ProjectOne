@@ -53,7 +53,7 @@ enum STATE
 
 // Control Loop
 float kp_gyro = 25;
-float ki_gyro = 10;
+float ki_gyro = 5;
 
 float ki_integral_gyro = 0;
 
@@ -173,7 +173,7 @@ STATE initialising()
     { // read 100 values of voltage when gyro is at still, to calculate the zero-drift.
         gyroVal = analogRead(gyroPin);
         sum1 += gyroVal;
-        delay(5);
+        //delay(5);
     }
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
@@ -197,7 +197,7 @@ STATE execution()
 {
     STATE return_state = RUNNING;
 
-    ClosedLoopStaph(speed_val);
+    ClosedLoopTurn(speed_val, 360);
 
     return return_state;
 }
