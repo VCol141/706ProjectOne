@@ -149,6 +149,7 @@ float sonar_dist = 0;
 //Gyro turn variables
 float gyro_aim;
 int aimup = 0;
+float ki_integral_turn = 0;
 
 // GYRO
 int gyroPin = A15;
@@ -809,15 +810,15 @@ void ClosedLoopStrafe(int speed_val)
 
 void ClosedLoopTurn(float speed, float angle_val)
 {
-    float e, correction_val, ki_integral_angle;
+    float e, correction_val;
     float kp_angle = 0;
     float ki_angle = 0;
 
     e = angle_val - gyroAngle;
 
-    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_turn, -speed, speed);
 
-    ki_integral_angle += e;
+    ki_integral_turn += e;
 
     left_font_motor.writeMicroseconds(1500 + correction_val);
     left_rear_motor.writeMicroseconds(1500 + correction_val);
