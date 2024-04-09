@@ -207,7 +207,17 @@ void loop(void) //main loop
     //   machine_state = stopped();
     //   break;
   };
+
   delay(10);
+
+  if (gyroTime == 0)
+  {
+    gyroTime = millis();
+  }
+  else
+  {
+    Gyro();
+  }
 }
 
 
@@ -243,6 +253,10 @@ STATE mapping(){
 
   //Read gyros, sonar, and average
   HC_SR04_range();
+<<<<<<< HEAD
+=======
+  //Add sonar value to sonar array
+>>>>>>> 8c1050950c2777b82f2682cc4090bc0879354671
   ultraArray[array_index] = sonar_cm;
   sonar_average = average_array(ultraArray, sonar_average);
   Gyro();
