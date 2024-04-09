@@ -69,8 +69,6 @@ enum align_state {
   ALIGN_IR
 };
 
-bool direction;
-
 align_state aligning_state = INITIAL_TURN;
 
 enum turning_dir {
@@ -296,10 +294,13 @@ STATE mapping(){
       break;
     case FIND_ORIENTATION:
       //turn the ultrasonic and get the distance on either side of the robot
-      if(find_orientation_distance() < BOARD_WIDTH);{                   
+      if(find_orientation_distance() < BOARD_WIDTH)
+      {                   
         BluetoothSerial.println("Correct Orientation :DDDDDD");
         home_state = GO_HOME;
-      }else{
+      }
+      else
+      {
         BluetoothSerial.println("Incorrect Orientation :((((((");
         home_state = ALIGN_ROBOT;
       }
@@ -315,15 +316,10 @@ STATE mapping(){
 }
 
 STATE running() {
-  
 
-  #ifndef NO_READ_GYRO
-      GYRO_reading();
-  #endif
 
   #ifndef NO_HC-SR04
     HC_SR04_range();
-    open_loop_path(sonar_cm);
   #endif
 
   #ifndef NO_BATTERY_V_OK
@@ -597,7 +593,7 @@ bool align_robot(){
 
   switch(aligning_state){
     case INITIAL_TURN:
-      closedLoopTurn(90);                       //turn 90 deg, VLAD NEEDS TO FIX THIS
+      ClosedLoopTurn(speed_val, 90);                       //turn 90 deg, VLAD NEEDS TO FIX THIS
       aligning_state = FIND_CLOSEST_WALL;
       break;
     
@@ -620,15 +616,15 @@ bool align_robot(){
       //if not yet crashed into wall keep moving up or down
       }else{
         if(direction == 0){
-          closedLoopStraight(speed_val);
+          ClosedLoopStraight(speed_val);
         }else{
-          closedLoopStraight(-speed_val);
+          ClosedLoopStraight(-speed_val);
         }
       }
       break;
 
     case ALIGN_IR:
-      closedLoopStrafe(-speed_val);          //go left so it crashes into the wall and aligns itself
+      ClosedLoopStrafe(-speed_val);          //go left so it crashes into the wall and aligns itself
       delay(500);
       return 1;
     break;
@@ -683,7 +679,7 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
     LR1arr[i] = LR1mm_reading;
     LR3arr[i] = LR3mm_reading;
     // HC_SR04_range();
-    ultraArray[i] = sonar_cm;
+    ultraArray[i] = sonar_dist;
     delay(5);
   }
   MR1mm = average_array(MR1arr, 0);
@@ -773,7 +769,7 @@ void ClosedLoopStraight(int speed_val)
     right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
 }
 
-void ClosedLoopStaph(int speed_val)
+void ClosedLoopStrafe(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
     
@@ -806,10 +802,29 @@ void ClosedLoopStaph(int speed_val)
     BluetoothSerial.print("ki:                    ");
     BluetoothSerial.println(ki_integral_sonar);
     BluetoothSerial.print("current reading:       ");
-    BluetoothSerial.println(sonar_cm);
+    BluetoothSerial.println(sonar_dist);
     BluetoothSerial.print("Aimed reading:         ");
     BluetoothSerial.println(sonar_dist);
 }
+
+void ClosedLoopTurn(float speed, float angle_val)
+{
+    float e, correction_val, ki_integral_angle;
+    float kp_angle = 0;
+    float ki_angle = 0;
+
+    e = angle_val - gyroAngle;
+
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
+
+    ki_integral_angle += e;
+
+    left_font_motor.writeMicroseconds(1500 + correction_val);
+    left_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_font_motor.writeMicroseconds(1500 + correction_val);
+}
+
 // double KalmanGyro(double rawdata){   // Kalman Filter
 //     double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
