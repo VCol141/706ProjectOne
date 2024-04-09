@@ -265,8 +265,6 @@ STATE mapping(){
       if (!is_battery_voltage_OK()) return STOPPED;
   #endif
 
-  Gyro();
-
   switch (home_state){
     case FIND_WALL:
       //Start turning and looking for wall
@@ -312,7 +310,7 @@ STATE mapping(){
         return RUNNING;
       }
       break;
-
+  }
   return MAPPING;
 }
 
