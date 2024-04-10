@@ -45,6 +45,7 @@ const byte right_front = 51;
 //Default ultrasonic ranging sensor pins, these pins are defined my the Shield
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
+const int servo_pin = 20;      //CHANGE ME
 
 
 
@@ -57,9 +58,20 @@ enum homing_state {
     FACE_WALL,
     FIND_ORIENTATION,
     ALIGN_ROBOT,
-    GO_HOME,              //could optimise later
+    GO_HOME              //could optimise later
 };
-homing_state home_state = ROTATE;
+
+homing_state home_state = FIND_WALL;
+
+//Aligning robot enums
+enum align_state {
+  INITIAL_TURN,
+  FIND_CLOSEST_WALL,
+  GO_UP_DOWN,
+  ALIGN_IR
+};
+
+align_state aligning_state = INITIAL_TURN;
 
 enum turning_dir {
     CCW,
@@ -93,7 +105,7 @@ Servo left_font_motor;  // create servo object to control Vex Motor Controller 2
 Servo left_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
-Servo turret_motor;
+Servo turret_motor;     // create servo to control ultrasonic servo motor
 
 
 int speed_val = 200;
@@ -132,7 +144,6 @@ double sensor_noise = 1;
 double process_noise = 10;
 
 //Sonar values
-double sonar_cm;
 float straight_time = 0;
 float ki_integral_sonar = 0;
 float sonar_dist = 0;
@@ -141,6 +152,8 @@ float ki_integral_angle = 0;
 //Gyro turn variables
 float gyro_aim;
 int aimup = 0;
+float ki_integral_turn = 0;
+
 // GYRO
 int gyroPin = A15;
 int gyroVal = 0;
@@ -162,7 +175,7 @@ int pos = 0;
 void setup(void)
 {
   BluetoothSerial.begin(115200);
-  turret_motor.attach(20);
+  turret_motor.attach(servo_pin);
   pinMode(LED_BUILTIN, OUTPUT);
 
   //Initialise sensor pins
@@ -238,10 +251,6 @@ STATE homing(){
       if (!is_battery_voltage_OK()) return STOPPED;
   #endif
 
-  //Run Gyro and initialise variables
-  Gyro();
-  double sonar_value;
-
   switch (home_state){
     case ROTATE: //Take initial average and  start turning in arbituary direction
       wall = measure_sonar();
@@ -286,16 +295,23 @@ STATE homing(){
       }
       break;
     case FIND_ORIENTATION:
-      delay(1000);
-      //Find where the other walls are to figure out where robot is
+      //turn the ultrasonic and get the distance on either side of the robot
+      if(find_orientation_distance() < BOARD_WIDTH)
+      {                   
+        BluetoothSerial.println("Correct Orientation :DDDDDD");
+        home_state = GO_HOME;
+      }
+      else
+      {
+        BluetoothSerial.println("Incorrect Orientation :((((((");
+        home_state = ALIGN_ROBOT;
+      }
+
       break;
     case ALIGN_ROBOT:
-      //Turn robot to correct orientaion if incorrect
-      break;
-    case GO_HOME:
-      //Robot uses gathered information to move to the corner of the field
-      //So strafe to relevant wall and move to back wall
-      //Once complete move to run
+      if(align_robot() == true){
+        return RUNNING;
+      }
       break;
   }
   return HOMING;
@@ -303,13 +319,9 @@ STATE homing(){
 
 STATE running() {
 
-  #ifndef NO_READ_GYRO
-      Gyro();
-  #endif
 
   #ifndef NO_HC-SR04
     HC_SR04_range();
-    open_loop_path(sonar_cm);
   #endif
 
   #ifndef NO_BATTERY_V_OK
@@ -490,8 +502,10 @@ void HC_SR04_range()
     BluetoothSerial.print(cm);
     BluetoothSerial.println(' ');
   }
-  sonar_cm = cm;
 
+  //Add sonar value to sonar array
+  ultraArray[array_index] = cm;
+  sonar_average = average_array(ultraArray, sonar_average);
 }
 #endif
 
@@ -574,47 +588,71 @@ void strafe_right ()
   right_font_motor.writeMicroseconds(1500 + speed_val);
 }
 
-// Open loop test script
-void open_loop_path(double sonar_cm)
-{
-  switch (path_state){
-    case FORWARD:
-      if(sonar_cm < 15){
-          stop();
-          delay(500);
-          path_state = STRAFE_RIGHT;
+/*************************OUR STUFF**************************/
+
+bool align_robot(){
+
+
+  switch(aligning_state){
+    case INITIAL_TURN:
+      ClosedLoopTurn(speed_val, 90);                       //turn 90 deg, VLAD NEEDS TO FIX THIS
+      aligning_state = FIND_CLOSEST_WALL;
+      break;
+    
+    case FIND_CLOSEST_WALL:
+      HC_SR04_range();
+      if(sonar_average < BOARD_LENGTH/2){
+        direction = 0;                          //gonna move up
       }else{
-          forward();
+        direction = 1;                          //gonna move down
       }
-      last_path_state = FORWARD;
+      aligning_state = GO_UP_DOWN;
       break;
 
-    case BACKWARD:
-      if(sonar_cm > 106.9){
-          stop();
-          delay(500);
-          path_state = (strafe_dir == LEFT) ? STRAFE_RIGHT: STRAFE_LEFT;
+    case GO_UP_DOWN:
+      HC_SR04_range();
+      //if robot has crashed into wall
+      if((sonar_average < 7 && direction == 0) || (sonar_average > BOARD_LENGTH - 20 && direction == 1)){   
+        stop();    
+        aligning_state = ALIGN_IR;
+      //if not yet crashed into wall keep moving up or down
       }else{
-          reverse();
+        if(direction == 0){
+          ClosedLoopStraight(speed_val);
+        }else{
+          ClosedLoopStraight(-speed_val);
+        }
       }
-      last_path_state = BACKWARD;
       break;
 
-    case STRAFE_RIGHT:
-      strafe_right();
-      delay(2000);          //adjust for desired strafing distance
-      stop();
+    case ALIGN_IR:
+      ClosedLoopStrafe(-speed_val);          //go left so it crashes into the wall and aligns itself
       delay(500);
-      path_state = (last_path_state == FORWARD) ? BACKWARD : FORWARD;
-      break;
-
-    case STRAFE_LEFT:
-      strafe_left();
-      delay(2000);          //adjust for desired strafing distance
-      stop();
-      path_state = (last_path_state == FORWARD ? BACKWARD : FORWARD);
-      break;
+      return 1;
+    break;
   }
+
+  return 0;
+}
+
+int find_orientation_distance(){
+  float right_cm, left_cm;
+
+  turret_motor.writeMicroseconds(2000);     //go full CW
+  delay(1000);                              //wait for servo to get to position
+
+  HC_SR04_range();              
+  right_cm = sonar_average;                 //get distance of right side
+
+  turret_motor.writeMicroseconds(1000);     //go full CCW
+  delay(1000);                                                                               //TUNE ME
+
+  HC_SR04_range();
+  left_cm = sonar_average;
+
+  turret_motor.writeMicroseconds(1500);     //go back to normal orientation
+
+  return (int)(right_cm + left_cm);
 }
 
 double read_IR(double coefficient, double power, double sensor_reading){
@@ -642,9 +680,9 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
     MR2arr[i] = MR2mm_reading;
     LR1arr[i] = LR1mm_reading;
     LR3arr[i] = LR3mm_reading;
-    HC_SR04_range();
-    ultraArray[i] = sonar_cm;
-    delay(50);
+    // HC_SR04_range();
+    ultraArray[i] = sonar_dist;
+    delay(5);
   }
   MR1mm = average_array(MR1arr, 0);
   MR2mm = average_array(MR2arr, 0);
@@ -760,7 +798,7 @@ void ClosedLoopStraight(int speed_val)
     right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
 }
 
-void ClosedLoopStaph(int speed_val)
+void ClosedLoopStrafe(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
     
@@ -793,10 +831,29 @@ void ClosedLoopStaph(int speed_val)
     BluetoothSerial.print("ki:                    ");
     BluetoothSerial.println(ki_integral_sonar);
     BluetoothSerial.print("current reading:       ");
-    BluetoothSerial.println(sonar_cm);
+    BluetoothSerial.println(sonar_dist);
     BluetoothSerial.print("Aimed reading:         ");
     BluetoothSerial.println(sonar_dist);
 }
+
+void ClosedLoopTurn(float speed, float angle_val)
+{
+    float e, correction_val;
+    float kp_angle = 0;
+    float ki_angle = 0;
+
+    e = angle_val - gyroAngle;
+
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_turn, -speed, speed);
+
+    ki_integral_turn += e;
+
+    left_font_motor.writeMicroseconds(1500 + correction_val);
+    left_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_font_motor.writeMicroseconds(1500 + correction_val);
+}
+
 // double KalmanGyro(double rawdata){   // Kalman Filter
 //     double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
