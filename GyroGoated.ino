@@ -28,7 +28,7 @@ SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 //State machine states
 enum STATE {
   INITIALISING,
-  MAPPING,
+  HOMING,
   RUNNING,
   STOPPED
 };
@@ -49,15 +49,17 @@ const int ECHO_PIN = 49;
 
 
 
-//Mapping variables
+//Homing variables
 enum homing_state {
+    ROTATE,
+    APPROACHING_WALL,
     FIND_WALL,
     FACE_WALL,
     FIND_ORIENTATION,
     ALIGN_ROBOT,
     GO_HOME,              //could optimise later
 };
-homing_state home_state = FIND_WALL;
+homing_state home_state = ROTATE;
 
 enum turning_dir {
     CCW,
@@ -120,9 +122,9 @@ double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 //Ultrasonic array
 double ultraArray[20];
 double sonar_average = 0;
+double sonar_threshold = 2;
+int wall_settled = 0;
 double wall = 0;
-bool direction = 1; //assume robot is heading away from wall
-bool wall_located = 0;
 
 //Kalman variables
 double MR1var, MR2var, LR1var, LR3var;
@@ -134,6 +136,7 @@ double sonar_cm;
 float straight_time = 0;
 float ki_integral_sonar = 0;
 float sonar_dist = 0;
+float ki_integral_angle = 0;
 
 //Gyro turn variables
 float gyro_aim;
@@ -197,34 +200,22 @@ void loop(void) //main loop
     case INITIALISING:
       machine_state = initialising();
       break;
-    case MAPPING:
-      machine_state = mapping();
+    case HOMING:
+      machine_state = homing();
       break;
-    // case RUNNING: //Lipo Battery Volage OK
-    //   machine_state =  running();
-    //   break;
-    // case STOPPED: //Stop of Lipo Battery voltage is too low, to protect Battery
-    //   machine_state = stopped();
-    //   break;
+    case RUNNING: //Lipo Battery Volage OK
+      machine_state =  running();
+      break;
+    case STOPPED: //Stop of Lipo Battery voltage is too low, to protect Battery
+      machine_state = stopped();
+      break;
   };
-
   delay(10);
-
-  if (gyroTime == 0)
-  {
-    gyroTime = millis();
-  }
-  else
-  {
-    Gyro();
-  }
 }
 
 
 STATE initialising() {
-  //initialising
-  SerialCom->println("INITIALISING....");
-  delay(1000); //One second delay to see the serial string "INITIALISING...."
+  BluetoothSerial.println("INITIALISING....");
   
   float sum1 = 0;
   // Gyro Setup
@@ -234,63 +225,68 @@ STATE initialising() {
       sum1 += gyroVal;
       delay(5);
   }
-
   gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
-  SerialCom->println("Enabling Motors...");
   enable_motors();
-  // intialise_IR_sensors();
-  SerialCom->println("RUNNING STATE...");
-  return MAPPING;
+  intialise_sensors();
+  return HOMING;
 }
 
-STATE mapping(){
-
+STATE homing(){
   //Check if battery voltage is ok before proceeding
   #ifndef NO_BATTERY_V_OK
       if (!is_battery_voltage_OK()) return STOPPED;
   #endif
 
-  //Read gyros, sonar, and average
-  HC_SR04_range();
-<<<<<<< HEAD
-=======
-  //Add sonar value to sonar array
->>>>>>> 8c1050950c2777b82f2682cc4090bc0879354671
-  ultraArray[array_index] = sonar_cm;
-  sonar_average = average_array(ultraArray, sonar_average);
+  //Run Gyro and initialise variables
   Gyro();
+  double sonar_value;
 
   switch (home_state){
-    case FIND_WALL:
-      //Start turning and looking for wall
+    case ROTATE: //Take initial average and  start turning in arbituary direction
+      wall = measure_sonar();
       cw();
-      gyro_aim = gyroAngle;
-      home_state = FACE_WALL;
-      BluetoothSerial.print("AIMING FOR ANGLE:");
-      BluetoothSerial.println(gyro_aim);
+      home_state = APPROACHING_WALL;
       break;
-
-    case FACE_WALL:
-      //Locate wall using sonar and record relevant angle.
-      error = gyroAngle - gyro_aim;
-      BluetoothSerial.print("AIMING FOR ANGLE:");
-      BluetoothSerial.println(gyro_aim);
-      BluetoothSerial.print("CURRENT ANGLE:");
-      BluetoothSerial.println(gyroAngle);
-      BluetoothSerial.print("ERROR:");
-      BluetoothSerial.println(error);
-      if (abs(error) >= 360){
-        BluetoothSerial.println("TURNING STOPPED");
+    case APPROACHING_WALL: //Detect when the robot is approaching a wall
+      sonar_value = measure_sonar();
+      if (sonar_value <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
+        home_state = FIND_WALL;
+      }
+      else if(wall > sonar_value){ //New maxmum detected, save this value
+        wall = sonar_value;
+      }
+      break;
+    case FIND_WALL: //Look for local min point
+      sonar_value = measure_sonar();
+      if (wall < sonar_value){ //New minimum found, log angle and min distance
+        gyro_aim = gyroAngle;
+        wall = sonar_value;
+      }
+      else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
         stop();
-        delay(2000);
-        gyroAngle = 0;
-        straight_time = millis();
-        home_state = FIND_ORIENTATION;
-        
+        delay(1000); //allow motors to power off before completely switching the direction
+        home_state = FACE_WALL;
+      }
+      break;
+    case FACE_WALL:
+      ClosedLoopTurn(100, gyro_aim);
+      if (abs(gyro_aim-gyroAngle) >= 1){
+        wall_settled++;
+        if (wall_settled == 10){
+          stop();
+          delay(2000);
+          BluetoothSerial.println("TURNING STOPPED");
+          gyroAngle = 0;
+          home_state = FIND_ORIENTATION;
+        }
+      else{
+        wall_settled = 0;
+      } 
       }
       break;
     case FIND_ORIENTATION:
+      delay(1000);
       //Find where the other walls are to figure out where robot is
       break;
     case ALIGN_ROBOT:
@@ -302,14 +298,13 @@ STATE mapping(){
       //Once complete move to run
       break;
   }
-  return MAPPING;
+  return HOMING;
 }
 
 STATE running() {
-  
 
   #ifndef NO_READ_GYRO
-      GYRO_reading();
+      Gyro();
   #endif
 
   #ifndef NO_HC-SR04
@@ -638,7 +633,7 @@ void read_IR_sensors(){
   LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
 
-void intialise_IR_sensors(){
+void intialise_sensors(){
 double MR1sum, MR2sum, LR1sum, LR3sum;
 
   for (int i = 0; i<=iterations; i++){
@@ -647,9 +642,9 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
     MR2arr[i] = MR2mm_reading;
     LR1arr[i] = LR1mm_reading;
     LR3arr[i] = LR3mm_reading;
-    // HC_SR04_range();
+    HC_SR04_range();
     ultraArray[i] = sonar_cm;
-    delay(5);
+    delay(50);
   }
   MR1mm = average_array(MR1arr, 0);
   MR2mm = average_array(MR2arr, 0);
@@ -657,11 +652,11 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
   LR3mm = average_array(LR3arr, 0);
   sonar_average = average_array(ultraArray, 0);
 
-  //Set IR variance to 0
-  MR1var = 0;
-  MR2var = 0;
-  LR1var = 0;
-  LR3var = 0;
+  //If using Kalman to filter, Set IR variance to 0
+  // MR1var = 0;
+  // MR2var = 0;
+  // LR1var = 0;
+  // LR3var = 0;
 }
 
 double average_array(double* input_array, double last_average){
@@ -684,18 +679,19 @@ double average_array(double* input_array, double last_average){
   }
 }
 
+double measure_sonar(){
+  HC_SR04_range();
+  ultraArray[array_index] = sonar_cm;
+  sonar_average = average_array(ultraArray, sonar_average);
+  array_index++;
+  if (array_index == 20){
+    array_index = 0;
+  }
+  return sonar_average;
+}
+
 void Gyro()
 {
-    // put your main code here, to run repeatedly:
-    if (Serial.available()) // Check for input from terminal
-    {
-        serialRead = Serial.read(); // Read input
-        if (serialRead == 49)       // Check for flag to execute, 49 is ascii for 1
-        {
-            Serial.end(); // end the serial communication to display the sensor data on monitor
-        }
-    }
-
     // convert the 0-1023 signal to 0-5v
     gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
 
@@ -718,6 +714,32 @@ void Gyro()
     }
 
     gyroTime = millis();
+}
+
+void ClosedLoopTurn(float speed, float angle_val)
+{
+    float e, correction_val;
+    float kp_angle = 20;
+    float ki_angle = 1;
+
+    e = angle_val - gyroAngle;
+
+    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
+
+    ki_integral_angle += e;
+
+    left_font_motor.writeMicroseconds(1500 + correction_val);
+    left_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_rear_motor.writeMicroseconds(1500 + correction_val);
+    right_font_motor.writeMicroseconds(1500 + correction_val);
+
+    BluetoothSerial.print("e:            ");
+    BluetoothSerial.println(e);
+    BluetoothSerial.print("correction:   ");
+    BluetoothSerial.println(correction_val);
+    BluetoothSerial.print("ki:           ");
+    BluetoothSerial.println(ki_integral_angle);
+    BluetoothSerial.println(" ");
 }
 
 void ClosedLoopStraight(int speed_val)

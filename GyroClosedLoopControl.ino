@@ -189,9 +189,7 @@ STATE initialising()
     }
 
     average_array();
-
     sonar_dist = sonar_average;
-
     sonar_average = 0;
 
     return RUNNING;
