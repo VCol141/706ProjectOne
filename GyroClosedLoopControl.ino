@@ -51,6 +51,12 @@ enum STATE
     FINISHED
 };
 
+enum RUN
+{
+    STRAIGHT,
+    STRAFE
+};
+
 // Control Loop
 float kp_gyro = 25;
 float ki_gyro = 5;
@@ -202,11 +208,53 @@ STATE initialising()
     return RUNNING;
 }
 
+bool forward_backward = 0;
+double timeinitial = 0;
+
 STATE execution()
 {
     STATE return_state = RUNNING;
+    static RUN run_state = STRAIGHT;
+    
 
-    ClosedLoopTurn(speed_val, 90);
+    switch(run_state)
+    {
+        case STRAIGHT:
+        (forward_backward == 0) ? ClosedLoopStraight(speed_val) : ClosedLoopStraight(-speed_val);
+        Sonar();
+
+        if ((!forward_backward && (sonar_dist < 25)) || (forward_backward && (sonar_dist > 100))) 
+        {
+            run_state = STRAFE; 
+            timeinitial = millis();
+
+            for (int i = 0; i < sonar_MA_n; i++)
+            {
+              Sonar();
+              sonar_values[i] = sonar_cm;
+            }
+
+            average_array();
+
+            BluetoothSerial.println("Finished Straight");
+        }
+
+        BluetoothSerial.print("Sonar Reading: ");
+        BluetoothSerial.println(sonar_dist);
+        break;
+
+        case STRAFE:
+        ClosedLoopStaph(speed_val);
+
+        if ((millis() - timeinitial) > 1000)
+        {
+            run_state = STRAIGHT;
+            forward_backward = !forward_backward;
+            BluetoothSerial.println("Finished Strafe");
+        }
+        break;
+
+    };
 
     return return_state;
 }
@@ -226,8 +274,6 @@ void ClosedLoopTurn(float speed, float angle_val)
     left_rear_motor.writeMicroseconds(1500 + correction_val);
     right_rear_motor.writeMicroseconds(1500 + correction_val);
     right_font_motor.writeMicroseconds(1500 + correction_val);
-
-    BluetoothSerial.println(e);
 }
 
 void ClosedLoopStaph(int speed_val)
@@ -257,17 +303,6 @@ void ClosedLoopStaph(int speed_val)
     left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
     right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
     right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
-
-    BluetoothSerial.print("e:                     ");
-    BluetoothSerial.println(e_sonar);
-    BluetoothSerial.print("correction:            ");
-    BluetoothSerial.println(correction_val_sonar);
-    BluetoothSerial.print("ki:                    ");
-    BluetoothSerial.println(ki_integral_sonar);
-    BluetoothSerial.print("current reading:       ");
-    BluetoothSerial.println(sonar_cm);
-    BluetoothSerial.print("Aimed reading:         ");
-    BluetoothSerial.println(sonar_dist);
 }
 
 void ClosedLoopStraight(int speed_val)
@@ -284,14 +319,6 @@ void ClosedLoopStraight(int speed_val)
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
     right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
     right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
-
-    BluetoothSerial.print("e:            ");
-    BluetoothSerial.println(e);
-    BluetoothSerial.print("correction:   ");
-    BluetoothSerial.println(correction_val);
-    BluetoothSerial.print("ki:           ");
-    BluetoothSerial.println(ki_integral_gyro);
-    BluetoothSerial.println(" ");
 }
 
 STATE stopping()
@@ -344,13 +371,6 @@ void Gyro()
         gyroAngleChange = (angularVelocity * (millis() - gyroTime)) / 1000;
         gyroAngle += gyroAngleChange;
     }
-
-    BluetoothSerial.print("Anglew Change:      ");
-    BluetoothSerial.println(gyroAngleChange);
-    BluetoothSerial.print("Delta T Actual:     ");
-    BluetoothSerial.println(millis() - gyroTime);
-    BluetoothSerial.print("Delta T theretical: ");
-    BluetoothSerial.println(timer_compensation / timer_frequency);
 
     gyroTime = millis();
 
