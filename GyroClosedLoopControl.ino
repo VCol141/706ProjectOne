@@ -27,7 +27,7 @@ Servo right_rear_motor; // create servo object to control Vex Motor Controller 2
 Servo right_font_motor; // create servo object to control Vex Motor Controller 29
 Servo turret_motor;
 
-int speed_val = 130;
+int speed_val = 250;
 
 // GYRO
 int gyroPin = A15;
@@ -57,11 +57,14 @@ enum RUN
     STRAFE
 };
 
-// Control Loop
-float kp_gyro = 25;
-float ki_gyro = 5;
+float ki_straight_gyro = 0;
 
-float ki_integral_gyro = 0;
+float ki_strafe_gyro = 0;
+float ki_strafe_ir = 0;
+
+float ki_turn_gyro = 0;
+
+float ki_distance_sonar = 0;
 
 #define CONTROL_CONSTRAINT_GYRO 100
 
@@ -78,30 +81,13 @@ float sonar_cm;
 const unsigned int MAX_DIST = 23200;
 
 float sonar_dist = 0;
-
-
-int sonar_MA_n = 20;
-float sonar_values[20];
-float sonar_average;
 float sonar_range = 20;
-
-// Control Loop
-float kp_sonar = 15;
-float ki_sonar = 0.5;
-float ki_integral_sonar = 0;
 
 //Kalman variables sonar
 float prev_val_sonar;
 float last_var_sonar = 999;
 float sensor_noise_sonar = 10;
 float process_noise_sonar = 1;
-
-#define CONTROL_CONSTRAINT_SONAR 150
-
-// Control Loop Angle Turn
-float kp_angle = 0;
-float ki_angle = 0;
-float ki_integral_angle = 0;
 
 // Timer values
 #define TIMER_FREQUENCY 500
@@ -111,6 +97,21 @@ int timer_frequency = 500;
 int timer_compensation = 5;
 
 int timerCount = 0;
+
+// IR Pins
+
+int LR_B = A7;
+int MR_B = A4;
+
+int LR_F = A5;
+int MR_F = A6;
+
+// Sonar
+int sonar_MA_n = 20;
+float sonar_values[20];
+float sonar_average;
+
+#define CONTROL_CONSTRAINT_IR 150
 
 void setup(void)
 {
@@ -128,6 +129,9 @@ void setup(void)
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
+
+    turret_motor.attach(8);
+    turret_motor.write(90);
 
     /*
     // Timer Set up
@@ -149,6 +153,8 @@ void setup(void)
     delay(1000); // settling time but no really needed
 }
 
+bool forward_backward = 0;
+double timeinitial = 0;
 void loop(void)
 {
     static STATE machine_state = STARTUP;
@@ -194,85 +200,100 @@ STATE initialising()
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
-    for (int i = 0; i < sonar_MA_n; i++)
-    {
-        Sonar();
-        sonar_values[i] = sonar_cm;
-    }
-
-    average_array();
-
-    sonar_dist = sonar_average;
-
-    sonar_average = 0;
-
     return RUNNING;
 }
 
-bool forward_backward = 0;
-double timeinitial = 0;
+int distance_aim = 20;
+
+#define MIN_DISTANCE 20
+#define MAX_DISTANCE 170
+
+#define STRAFE_DISTANCE 20
 
 STATE execution()
 {
     STATE return_state = RUNNING;
     static RUN run_state = STRAIGHT;
+
+    float e_distance, u_distance;
+    float kp_distance = 20;
+    float ki_distance = 0;
+
+    e_distance = sonar_cm - distance_aim;
+
+    u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
     
 
     switch(run_state)
     {
         case STRAIGHT:
-        (forward_backward == 0) ? ClosedLoopStraight(speed_val) : ClosedLoopStraight(-speed_val);
 
-        if ((!forward_backward && (sonar_cm < 25)) || (forward_backward && (sonar_cm > 100))) 
+        ClosedLoopStraight(u_distance);
+
+        if ((!forward_backward && (sonar_cm <= MIN_DISTANCE)) || (forward_backward && (sonar_cm >= MAX_DISTANCE))) 
         {
             stop();
 
-            run_state = STRAFE; 
+            run_state = STRAFE;
+
+            BluetoothSerial.println(" ");
+            BluetoothSerial.println("Finished Straight");
+            BluetoothSerial.println(" ");
+            
+            ki_distance_sonar = 0;
+            turret_motor.write(0);
+            delay(1000);
 
             for (int i = 0; i < sonar_MA_n; i++)
             {
-              Sonar();
-              sonar_values[i] = sonar_cm;
-              delay(5);
+                Sonar();
+                sonar_values[i] = sonar_cm;
+                delay(5);
             }
 
             average_array();
 
-            BluetoothSerial.println(" ");
-            BluetoothSerial.println("Finished Straight");
-            BluetoothSerial.println(sonar_average);
-            BluetoothSerial.println(" ");
-            
+            distance_aim = sonar_average - STRAFE_DISTANCE;
 
-            delay(1000);
+            BluetoothSerial.print("current Sonar: ");
+            BluetoothSerial.println(distance_aim);
             timeinitial = millis();
         }
 
-        BluetoothSerial.print("Sonar Reading: ");
+        BluetoothSerial.print("sonar Reading: ");
         BluetoothSerial.println(sonar_cm);
         break;
 
         case STRAFE:
-        ClosedLoopStaph(speed_val);
 
-        if ((millis() - timeinitial) > 1000)
+        ClosedLoopStaph(u_distance);
+
+        if (sonar_cm <= distance_aim)
         {
             stop();
-            delay(1000);
+
             run_state = STRAIGHT;
+
             forward_backward = !forward_backward;
+
             BluetoothSerial.println(" ");
             BluetoothSerial.println("Finished Strafe");
             BluetoothSerial.println(" ");
+
+            turret_motor.write(90);
+            distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
+            ki_distance_sonar = 0;
+
+            delay(100);
         }
 
-        BluetoothSerial.print("Timer Reading: ");
-        BluetoothSerial.println(millis() - timeinitial);
-        BluetoothSerial.print("Sonar:         ");
+        BluetoothSerial.print("sonar Reading: ");
         BluetoothSerial.println(sonar_cm);
-        break;
 
+        break;
     };
+
+    ki_distance_sonar += e_distance;
 
     return return_state;
 }
@@ -288,13 +309,16 @@ void stop() //Stop
 void ClosedLoopTurn(float speed, float angle_val)
 {
     float e, correction_val;
-    float kp_angle = 3;
+
+    float kp_gyro = 3;
+    float ki_gyro = 0;
+
 
     (abs(gyroAngleChange) < 3) ? e = angle_val - gyroAngle : e = 0;
 
-    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
+    correction_val = constrain(kp_gyro * e + ki_gyro * ki_turn_gyro, -speed, speed);
 
-    ki_integral_angle += e;
+    ki_turn_gyro += e;
 
     left_font_motor.writeMicroseconds(1500 + correction_val);
     left_rear_motor.writeMicroseconds(1500 + correction_val);
@@ -304,34 +328,45 @@ void ClosedLoopTurn(float speed, float angle_val)
 
 void ClosedLoopStaph(int speed_val)
 {
-    float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
+    float e_gyro, e_ir, correction_val_gyro = 0, correction_val_ir = 0;
+
+    float kp_gyro = 25;
+    float ki_gyro = 5;
+
+    //float kp_ir = 0;
+    //float ki_ir = 0;
+
 
     (abs(gyroAngleChange) < 3) ? e_gyro = gyroAngleChange : e_gyro = 0;
 
-    e_sonar = sonar_dist - sonar_average;
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_strafe_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
+    
+    ki_strafe_gyro += e_gyro;
 
-    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
+    //e_ir = analogRead((forward_backward) ? MR_B : MR_F) - ir_average;
 
-    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -CONTROL_CONSTRAINT_SONAR, CONTROL_CONSTRAINT_SONAR);
+    //correction_val_ir = constrain(kp_ir * e_ir + ki_ir * ki_strafe_ir, -CONTROL_CONSTRAINT_IR, CONTROL_CONSTRAINT_IR);
 
-    ki_integral_gyro += e_gyro;
-    ki_integral_sonar += e_sonar;
+    //ki_strafe_ir += e_ir;
 
-    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
-    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
-    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
-    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_ir);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_ir);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_ir);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_ir);
 }
 
 void ClosedLoopStraight(int speed_val)
 {
     float e, correction_val;
 
+    float kp_gyro = 25;
+    float ki_gyro = 5;
+
     (abs(gyroAngleChange) < 3) ? e = gyroAngleChange : e = 0;
 
-    correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
+    correction_val = constrain(kp_gyro * e + ki_gyro * ki_straight_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
-    ki_integral_gyro += e;
+    ki_straight_gyro += e;
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
@@ -470,7 +505,7 @@ void average_array()
 {
     double sum = 0;
   
-    for (int i = 0; i <= sonar_MA_n; i++)
+    for (int i = 0; i < sonar_MA_n; i++)
     {
         // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
         sum += sonar_values[i];
