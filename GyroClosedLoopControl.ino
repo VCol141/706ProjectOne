@@ -47,6 +47,7 @@ HardwareSerial *SerialCom;
 enum STATE
 {
     STARTUP,
+    CORNER,
     RUNNING,
     FINISHED
 };
@@ -54,7 +55,8 @@ enum STATE
 enum RUN
 {
     STRAIGHT,
-    STRAFE
+    STRAFE,
+    STOP
 };
 
 float ki_straight_gyro = 0;
@@ -107,11 +109,27 @@ int LR_F = A5;
 int MR_F = A6;
 
 // Sonar
-int sonar_MA_n = 20;
-float sonar_values[20];
+int sonar_MA_n = 30;
+float sonar_values[30];
 float sonar_average;
 
 #define CONTROL_CONSTRAINT_IR 150
+
+// Run
+
+bool forward_backward = 1;
+bool left_right = 0;
+
+bool last_lap = 0;
+
+float distance_aim = 20;
+
+#define MIN_DISTANCE 15
+#define MAX_DISTANCE 160
+#define STRAFE_DISTANCE 10
+
+#define DISTANCE_OFFSET 2.5
+#define MIN_SIDE_DIST 20
 
 void setup(void)
 {
@@ -153,8 +171,6 @@ void setup(void)
     delay(1000); // settling time but no really needed
 }
 
-bool forward_backward = 0;
-double timeinitial = 0;
 void loop(void)
 {
     static STATE machine_state = STARTUP;
@@ -164,6 +180,10 @@ void loop(void)
     case STARTUP:
         machine_state = initialising();
         gyroAngle = 0;
+        break;
+    case CORNER:
+        machine_state = corner();
+
         break;
     case RUNNING:
         machine_state = execution();
@@ -195,20 +215,47 @@ STATE initialising()
     { // read 100 values of voltage when gyro is at still, to calculate the zero-drift.
         gyroVal = analogRead(gyroPin);
         sum1 += gyroVal;
-        //delay(5);
+        delay(5);
     }
 
     gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
 
-    return RUNNING;
+    return CORNER;
 }
 
-int distance_aim = 20;
 
-#define MIN_DISTANCE 20
-#define MAX_DISTANCE 170
+STATE corner()
+{
+  SonarCheck(0);
 
-#define STRAFE_DISTANCE 20
+  if (sonar_average > 50) { left_right = 1; }
+
+  SonarCheck(90);
+
+  if(sonar_average > 50) { forward_backward = 0; }
+
+  return RUNNING;
+}
+
+void SonarCheck(float angle_in)
+{
+    turret_motor.write(angle_in);
+
+    delay(100);
+
+    for (int i = 0; i < sonar_MA_n; i++)
+    {
+        while (sonar_cm < 20)
+        {
+            Sonar();
+        }
+
+        sonar_values[i] = sonar_cm;
+        delay(5);
+    }
+
+    average_array();
+}
 
 STATE execution()
 {
@@ -216,7 +263,7 @@ STATE execution()
     static RUN run_state = STRAIGHT;
 
     float e_distance, u_distance;
-    float kp_distance = 20;
+    float kp_distance = 10;
     float ki_distance = 0;
 
     e_distance = sonar_cm - distance_aim;
@@ -228,72 +275,60 @@ STATE execution()
     {
         case STRAIGHT:
 
-        ClosedLoopStraight(u_distance);
+            ClosedLoopStraight(u_distance);
 
-        if ((!forward_backward && (sonar_cm <= MIN_DISTANCE)) || (forward_backward && (sonar_cm >= MAX_DISTANCE))) 
-        {
-            stop();
-
-            run_state = STRAFE;
-
-            BluetoothSerial.println(" ");
-            BluetoothSerial.println("Finished Straight");
-            BluetoothSerial.println(" ");
-            
-            ki_distance_sonar = 0;
-            turret_motor.write(0);
-            delay(1000);
-
-            for (int i = 0; i < sonar_MA_n; i++)
+            if ((!forward_backward && (sonar_cm <= (MIN_DISTANCE + DISTANCE_OFFSET))) || (forward_backward && (sonar_cm >= (MAX_DISTANCE - DISTANCE_OFFSET)))) 
             {
-                Sonar();
-                sonar_values[i] = sonar_cm;
-                delay(5);
+                stop();
+            
+                ki_distance_sonar = 0;
+
+                SonarCheck(0);
+
+                (sonar_average < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+
+                distance_aim = sonar_average - STRAFE_DISTANCE;
+
+                BluetoothSerial.println(" ");
+                BluetoothSerial.print("sonar Average: ");
+                BluetoothSerial.println(sonar_average);
+                BluetoothSerial.println(" ");
             }
-
-            average_array();
-
-            distance_aim = sonar_average - STRAFE_DISTANCE;
-
-            BluetoothSerial.print("current Sonar: ");
-            BluetoothSerial.println(distance_aim);
-            timeinitial = millis();
-        }
-
-        BluetoothSerial.print("sonar Reading: ");
-        BluetoothSerial.println(sonar_cm);
         break;
 
         case STRAFE:
 
-        ClosedLoopStaph(u_distance);
+            ClosedLoopStaph(u_distance);
 
-        if (sonar_cm <= distance_aim)
-        {
+            if (sonar_cm <= (distance_aim + DISTANCE_OFFSET))
+            {
+                stop();
+
+                run_state = STRAIGHT;
+
+                forward_backward = !forward_backward;
+
+                SonarCheck(90);
+
+                distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
+                ki_distance_sonar = 0;
+            }
+        break;
+
+        case STOP:
             stop();
-
-            run_state = STRAIGHT;
-
-            forward_backward = !forward_backward;
-
-            BluetoothSerial.println(" ");
-            BluetoothSerial.println("Finished Strafe");
-            BluetoothSerial.println(" ");
-
-            turret_motor.write(90);
-            distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
-            ki_distance_sonar = 0;
-
-            delay(100);
-        }
-
-        BluetoothSerial.print("sonar Reading: ");
-        BluetoothSerial.println(sonar_cm);
-
+            return_state = FINISHED;
         break;
     };
 
     ki_distance_sonar += e_distance;
+
+    BluetoothSerial.println(" ");
+    BluetoothSerial.print("distance aim: ");
+    BluetoothSerial.println(distance_aim);
+    BluetoothSerial.print("Sonar:        ");
+    BluetoothSerial.println(sonar_cm);
+    BluetoothSerial.println(" ");
 
     return return_state;
 }
