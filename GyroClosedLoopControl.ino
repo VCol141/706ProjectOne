@@ -240,13 +240,10 @@ STATE execution()
         {
             stop();
 
-            run_state = STRAFE; 
-
-            average_array();
+            run_state = STRAFE;
 
             BluetoothSerial.println(" ");
             BluetoothSerial.println("Finished Straight");
-            BluetoothSerial.println(ir_average);
             BluetoothSerial.println(" ");
             
 
@@ -259,6 +256,7 @@ STATE execution()
         break;
 
         case STRAFE:
+
         ClosedLoopStaph(speed_val);
 
         if ((millis() - timeinitial) > 1000)
@@ -315,25 +313,26 @@ void ClosedLoopTurn(float speed, float angle_val)
 
 void ClosedLoopStaph(int speed_val)
 {
-    float e_gyro, e_ir, correction_val_gyro, correction_val_ir;
+    float e_gyro, e_ir, correction_val_gyro = 0, correction_val_ir = 0;
 
     float kp_gyro = 25;
     float ki_gyro = 5;
 
-    float kp_ir = 0;
-    float ki_ir = 0;
+    //float kp_ir = 0;
+    //float ki_ir = 0;
 
 
     (abs(gyroAngleChange) < 3) ? e_gyro = gyroAngleChange : e_gyro = 0;
 
-    e_ir = analogRead((forward_backward) ? MR_B : MR_F) - ir_average;
-
     correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_strafe_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
-
-    correction_val_ir = constrain(kp_ir * e_ir + ki_ir * ki_strafe_ir, -CONTROL_CONSTRAINT_IR, CONTROL_CONSTRAINT_IR);
-
+    
     ki_strafe_gyro += e_gyro;
-    ki_strafe_ir += e_ir;
+
+    //e_ir = analogRead((forward_backward) ? MR_B : MR_F) - ir_average;
+
+    //correction_val_ir = constrain(kp_ir * e_ir + ki_ir * ki_strafe_ir, -CONTROL_CONSTRAINT_IR, CONTROL_CONSTRAINT_IR);
+
+    //ki_strafe_ir += e_ir;
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_ir);
     left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_ir);
