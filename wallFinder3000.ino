@@ -285,6 +285,7 @@ STATE homing(){
       else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
         stop();
         delay(1000); //allow motors to power off before completely switching the direction
+        gyro_aim = gyroAngle - gyro_aim;
         gyroAngle = 0;
         BluetoothSerial.println("trying to face wall");
         BluetoothSerial.print("AIMING FOR ANGLE: ");
@@ -296,8 +297,8 @@ STATE homing(){
       BluetoothSerial.print("CURRENT ANGLE: ");
       BluetoothSerial.println(gyroAngle);
       float sonar_error;
-      sonar_error = ClosedLoopWallTurn(200, wall, -gyro_aim); //Aim about 8 degrees back from the actual measured angle
-      if (abs(sonar_error) <= 1){
+      sonar_error = ClosedLoopWallTurn(130, wall, gyro_aim); //Aim about 8 degrees back from the actual measured angle
+      if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
           stop();
@@ -633,8 +634,8 @@ void open_loop_path(double sonar_cm)
 float ClosedLoopWallTurn(float speed, float sonar_aim, float gyro_aim)
 {
   float e, correction_val, current_dist;
-  float kp_angle = 10;
-  float ki_angle = 0.1;
+  float kp_angle = 5;
+  float ki_angle = 0;
 
   e = gyro_aim - gyroAngle;
 
