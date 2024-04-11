@@ -2,8 +2,8 @@
 #include <Servo.h>  //Need for Servo pulse output
 #include <SoftwareSerial.h>
 
-#define NO_READ_GYRO  //Uncomment of GYRO is not attached.
-//#define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
+// #define NO_READ_GYRO  //Uncomment of GYRO is not attached.
+// #define NO_HC-SR04 //Uncomment of HC-SR04 ultrasonic ranging sensor is not attached.
 //#define NO_BATTERY_V_OK //Uncomment of BATTERY_V_OK if you do not care about battery damage.
 
 // Serial Data input pin
@@ -28,7 +28,7 @@ SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 //State machine states
 enum STATE {
   INITIALISING,
-  MAPPING,
+  HOMING,
   RUNNING,
   STOPPED
 };
@@ -46,18 +46,20 @@ const byte right_front = 51;
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
 
-double sonar_cm;
 
 
-//Mapping variables
-enum mapping_state {
-    FINDING_WALL,
-    TURNING,
-    FINDING_CORNER,
-    STRAFING,
-    MOVE_BACK,              //could optimise later
+
+//Homing variables
+enum homing_state {
+    ROTATE,
+    APPROACHING_WALL,
+    FIND_WALL,
+    FACE_WALL,
+    FIND_ORIENTATION,
+    ALIGN_ROBOT,
+    GO_HOME,              //could optimise later
 };
-mapping_state map_state;
+homing_state home_state = ROTATE;
 
 enum turning_dir {
     CCW,
@@ -120,16 +122,43 @@ double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 //Ultrasonic array
 double ultraArray[20];
 double sonar_average = 0;
-double wall, corner = 0;
-double gyro_at_wall, gyro_at_corner = 0;
-bool direction = 1; //assume robot is heading away from wall
-int wall_count = 0;
-double wall_array[4];
+double sonar_threshold = 1;
+int wall_settled = 0;
+double wall = 0;
 
 //Kalman variables
 double MR1var, MR2var, LR1var, LR3var;
 double sensor_noise = 1;
 double process_noise = 10;
+
+//Sonar values
+double sonar_cm;
+float straight_time = 0;
+float ki_integral_sonar = 0;
+float sonar_dist = 0;
+float ki_integral_angle = 0;
+
+//Sonar Kalman
+float process_noise_sonar = 10;
+float sensor_noise_sonar = 1;
+float sonar_variance = 0;
+
+//Gyro turn variables
+float gyro_aim;
+int aimup = 0;
+// GYRO
+int gyroPin = A15;
+int gyroVal = 0;
+
+float gyroZeroVoltage = 0;
+float gyroRate = 0;
+float gyroAngleChange = 0;
+float gyroAngle = 0;
+float error = 0;
+float ki_integral_gyro = 0;
+byte serialRead = 0;
+
+float gyroTime = 0;
 
 //Serial Pointer
 HardwareSerial *SerialCom;
@@ -138,8 +167,11 @@ int pos = 0;
 void setup(void)
 {
   BluetoothSerial.begin(115200);
-  turret_motor.attach(20);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  //Initialise the ultrasonic motor and set to 0 position
+  turret_motor.attach(8);
+  turret_motor.write(90);
 
   //Initialise sensor pins
   pinMode(A4, INPUT);
@@ -150,7 +182,10 @@ void setup(void)
   // The Trigger pin will tell the sensor to range find
   pinMode(TRIG_PIN, OUTPUT);
   digitalWrite(TRIG_PIN, LOW);
-
+  
+  //Initilaise Gyro Pins
+  pinMode(gyroPin, INPUT);
+  pinMode(A14, INPUT);
   // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
   SerialCom = &Serial;
   SerialCom->begin(115200);
@@ -159,7 +194,7 @@ void setup(void)
   SerialCom->println("Setup....");
 
   pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
-  delay(1000); //settling time but no really needed
+  delay(1000); //settling time but noT really needed
 
   path_state = FORWARD;
   last_path_state = FORWARD;
@@ -173,8 +208,8 @@ void loop(void) //main loop
     case INITIALISING:
       machine_state = initialising();
       break;
-    case MAPPING:
-      machine_state = mapping();
+    case HOMING:
+      machine_state = homing();
       break;
     case RUNNING: //Lipo Battery Volage OK
       machine_state =  running();
@@ -188,156 +223,116 @@ void loop(void) //main loop
 
 
 STATE initialising() {
-  //initialising
-  SerialCom->println("INITIALISING....");
-  delay(1000); //One second delay to see the serial string "INITIALISING...."
-  SerialCom->println("Enabling Motors...");
+  BluetoothSerial.println("INITIALISING....");
+  
   enable_motors();
-  intialise_IR_sensors();
-  SerialCom->println("RUNNING STATE...");
-  return MAPPING;
+
+  BluetoothSerial.println("Finished sweep");
+
+
+  float sum1 = 0;
+  // Gyro Setup
+  for (int i = 0; i < 100; i++)
+  { // read 100 values of voltage when gyro is at still, to calculate the zero-drift.
+      gyroVal = analogRead(gyroPin);
+      sum1 += gyroVal;
+      delay(5);
+  }
+  gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
+
+  
+  intialise_sensors();
+  return HOMING;
 }
 
-STATE mapping() {
-  read_IR_sensors();
-  filter_IR_reading();
-  HC_SR04_range();
-  //Add sonar value to sonar array
-  ultraArray[array_index] = sonar_cm;
-  sonar_average = average_array(ultraArray, sonar_average);
-  
+STATE homing(){
+  //Check if battery voltage is ok before proceeding
+  #ifndef NO_BATTERY_V_OK
+      if (!is_battery_voltage_OK()) return STOPPED;
+  #endif
 
-  BluetoothSerial.print("SONAR AVERAGE");
-  BluetoothSerial.println(sonar_average);
+  //Run Gyro and initialise variables
+  Gyro();
+  double sonar_value;
 
-  // BluetoothSerial.print("CURRENT STATE:");
-  // BluetoothSerial.println(map_state);
-  // BluetoothSerial.print("LR1 DISTANCE:");
-  // BluetoothSerial.println(LR1mm);
-  // BluetoothSerial.print("LR3 DISTANCE:");
-  // BluetoothSerial.println(LR3mm);
-  // BluetoothSerial.print("CURRENT WIDTH");
-  // BluetoothSerial.println(LR1mm + LR3mm);
-  // BluetoothSerial.print("SONAR DISTANCE");
-  // BluetoothSerial.println(sonar_cm);
-  //map area and find starting corner
-  switch (map_state){
-    case FINDING_WALL:
-      if(MR1mm < LR3mm || MR2mm < LR1mm){
-        turn_dir = CCW;
-          BluetoothSerial.println("Turning CCW");
-      }else{
-        turn_dir = CW;
-        BluetoothSerial.println("Turning CW");
-      }
-      (turn_dir == CCW) ? ccw() : cw();
-      map_state = TURNING;
+  switch (home_state){
+    case ROTATE: //Take initial average and  start turning in arbituary direction
+      BluetoothSerial.println("Starting Rotation");
+      wall = measure_sonar();
+      ccw();
+      home_state = APPROACHING_WALL;
+      BluetoothSerial.println("Looking for max");
       break;
-
-    case TURNING:
-      switch(direction) {
-        case 0: //Sonar value is decreasing, looking for a wall
-          if (sonar_average <= wall){ //New minimum value has been found, set this as a potential wall
-            wall = sonar_average;
-            gyro_at_wall = 60;
-          }
-          if (wall + 1 < sonar_average){ //Passed minimum value, start looking for a corner
-            direction = 1;
-            corner = sonar_average;
-            BluetoothSerial.print("  WALL DISTANCE: ");
-            BluetoothSerial.println(wall);
-            // BluetoothSerial.print("  ANGLE: ");
-            // BluetoothSerial.println(gyro_at_wall);
-            wall_array[wall_count] = wall;
-            wall_count++;
-            if (wall_count == 4){
-              stop();
-              BluetoothSerial.println("WALL DISTANCES:");
-              for (int i = 0; i < wall_count; i++){
-                BluetoothSerial.println(wall_array[i]);
-              }
-            }
-          }
-          break;
-
-        case 1: //Sonar value is increasing, looking for a corner
-          if (sonar_average >= corner){ //New maximum value has been found, set this as a potential corner
-            corner = sonar_average;
-            gyro_at_corner = 60;
-          }
-          if (corner - 1 > sonar_average){ //Passed maximum value, start looking for a wall
-            direction = 0;
-            wall = sonar_average;
-            BluetoothSerial.println("Found a corner, looking for a wall");
-          break;
-          }
-        }
-        break;
+    case APPROACHING_WALL: //Detect when the robot is approaching a wall
+      sonar_value = measure_sonar();
+      if (sonar_value <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
+        BluetoothSerial.println("looking for min");
+        home_state = FIND_WALL;
       }
-      
-
-  //   case FINDING_CORNER:
-  //     if(LR1mm > LR3mm){
-  //       strafe_dir = LEFT;
-  //       BluetoothSerial.println("Strafing left");
-  //     }else{
-  //       strafe_dir = RIGHT;
-  //       BluetoothSerial.println("Strafing right");
-  //     }
-  //     map_state = STRAFING;
-  //     break;
-
-  //   case STRAFING:
-  //     if(strafe_dir == LEFT){
-  //       strafe_left();
-  //     }else{
-  //       strafe_right();
-  //     }
-
-  //     if(((MR1mm <= WALL_LIMIT_DISTANCE) && (LR1mm <= WALL_LIMIT_DISTANCE) ) || ((MR2mm <= WALL_LIMIT_DISTANCE) && (LR3mm <= WALL_LIMIT_DISTANCE))){
-  //       map_state = MOVE_BACK;
-  //       stop();
-  //     }
-  //     break;
-
-  //   case MOVE_BACK:
-  //     reverse();
-  //     if(sonar_cm >= 170){
-  //       return RUNNING;
-  //       stop();
-  //     }
-  //     break;        
-  // }
-  return MAPPING;
+      else if(wall < sonar_value){ //New maxmum detected, save this value
+        wall = sonar_value;
+      }
+      break;
+    case FIND_WALL: //Look for local min point
+      sonar_value = measure_sonar();
+      if (wall > sonar_value){ //New minimum found, log angle and min distance
+        gyro_aim = gyroAngle;
+        wall = sonar_value;
+      }
+      else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
+        stop();
+        delay(1000); //allow motors to power off before completely switching the direction
+        BluetoothSerial.println("trying to face wall");
+        home_state = FACE_WALL;
+      }
+      break;
+    case FACE_WALL:
+      float sonar_error;
+      sonar_error = ClosedLoopTurn(200, wall-0.8);
+      if (abs(sonar_error) <= 0.5){
+        wall_settled++;
+        if (wall_settled == 10){
+          stop();
+          delay(2000);
+          BluetoothSerial.println("TURNING STOPPED");
+          gyroAngle = 0;
+          home_state = FIND_ORIENTATION;
+        }
+      }
+      else{
+        wall_settled = 0;
+      }
+      break;
+    case FIND_ORIENTATION:
+      delay(1000);
+      //Find where the other walls are to figure out where robot is
+      break;
+    case ALIGN_ROBOT:
+      //Turn robot to correct orientaion if incorrect
+      break;
+    case GO_HOME:
+      //Robot uses gathered information to move to the corner of the field
+      //So strafe to relevant wall and move to back wall
+      //Once complete move to run
+      break;
+  }
+  return HOMING;
 }
 
 STATE running() {
 
-  static unsigned long previous_millis;
+  #ifndef NO_READ_GYRO
+      Gyro();
+  #endif
 
-//   read_serial_command();
-//   fast_flash_double_LED_builtin();
+  #ifndef NO_HC-SR04
+    HC_SR04_range();
+    open_loop_path(sonar_cm);
+  #endif
 
-  if (millis() - previous_millis > 500) {  //Arduino style 500ms timed execution statement
-    previous_millis = millis();
-
-    SerialCom->println("RUNNING---------");
-    //speed_change_smooth();
-    Analog_Range_A4();
-
-#ifndef NO_READ_GYRO
-    GYRO_reading();
-#endif
-
-#ifndef NO_HC-SR04
-  HC_SR04_range();
-  open_loop_path(sonar_cm);
-#endif
-
-#ifndef NO_BATTERY_V_OK
-    if (!is_battery_voltage_OK()) return STOPPED;
-#endif
-  }
+  #ifndef NO_BATTERY_V_OK
+      if (!is_battery_voltage_OK()) return STOPPED;
+  #endif
 
   return RUNNING;
 }
@@ -458,6 +453,8 @@ boolean is_battery_voltage_OK()
 }
 #endif
 
+
+//Read Sonar Function
 #ifndef NO_HC-SR04
 void HC_SR04_range()
 {
@@ -477,16 +474,15 @@ void HC_SR04_range()
     t2 = micros();
     pulse_width = t2 - t1;
     if ( pulse_width > (MAX_DIST + 1000)) {
-      SerialCom->println("HC-SR04: NOT found");
+      BluetoothSerial.print("HC-SR04: NOT found");
       return;
     }
   }
-
   // Measure how long the echo pin was held high (pulse width)
   // Note: the micros() counter will overflow after ~70 min
 
   t1 = micros();
-  while ( digitalRead(ECHO_PIN) == 1)
+  while (digitalRead(ECHO_PIN) == 1) //Currently echo pin is not staying high for the true amount (likely due to the robot moving between the pulses being sent)
   {
     t2 = micros();
     pulse_width = t2 - t1;
@@ -502,101 +498,20 @@ void HC_SR04_range()
   // Calculate distance in centimeters and inches. The constants
   // are found in the datasheet, and calculated from the assumed speed
   //of sound in air at sea level (~340 m/s).
-  cm = pulse_width / 58.0;
+  cm = pulse_width / 58.0;  //May need to be divided by a different value when the robot is rotating??
 
   // Print out results
   if ( pulse_width > MAX_DIST ) {
     SerialCom->println("HC-SR04: Out of range");
   } else {
-    BluetoothSerial.print(cm);
-    BluetoothSerial.println(' ');
+    BluetoothSerial.print("Last sonar reading:");
+    BluetoothSerial.println(cm);
+    BluetoothSerial.println("");
   }
   sonar_cm = cm;
+  
 }
 #endif
-
-void Analog_Range_A4()
-{
-  SerialCom->print("Analog Range A4:");
-  SerialCom->println(analogRead(A4));
-}
-
-#ifndef NO_READ_GYRO
-void GYRO_reading()
-{
-  SerialCom->print("GYRO A3:");
-  SerialCom->println(analogRead(A3));
-}
-#endif
-
-//Serial command pasing
-void read_serial_command()
-{
-  if (SerialCom->available()) {
-    char val = SerialCom->read();
-    SerialCom->print("Speed:");
-    SerialCom->print(speed_val);
-    SerialCom->print(" ms ");
-
-    //Perform an action depending on the command
-    switch (val) {
-      case 'w'://Move Forward
-      case 'W':
-        forward ();
-        SerialCom->println("Forward");
-        BluetoothSerial.println("Forward");
-        
-        break;
-      case 's'://Move Backwards
-      case 'S':
-        reverse ();
-        SerialCom->println("Backwards");
-        BluetoothSerial.println("Backwards");
-        break;
-      case 'q'://Turn Left
-      case 'Q':
-        strafe_left();
-        SerialCom->println("Strafe Left");
-        BluetoothSerial.println("Strafe Left");
-        break;
-      case 'e'://Turn Right
-      case 'E':
-        strafe_right();
-        SerialCom->println("Strafe Right");
-        BluetoothSerial.println("Strafe Right");
-        break;
-      case 'a'://Turn Right
-      case 'A':
-        ccw();
-        SerialCom->println("ccw");
-        BluetoothSerial.println("ccw");
-        break;
-      case 'd'://Turn Right
-      case 'D':
-        cw();
-        SerialCom->println("cw");
-        BluetoothSerial.println("cw");
-        break;
-      case '-'://Turn Right
-      case '_':
-        speed_change = -100;
-        SerialCom->println("-100");
-        break;
-      case '=':
-      case '+':
-        speed_change = 100;
-        SerialCom->println("+");
-        break;
-      default:
-        stop();
-        SerialCom->println("stop");
-        BluetoothSerial.println("stop");
-        break;
-    }
-
-  }
-
-}
 
 //----------------------Motor moments------------------------
 //The Vex Motor Controller 29 use Servo Control signals to determine speed and direction, with 0 degrees meaning neutral https://en.wikipedia.org/wiki/Servo_control
@@ -736,7 +651,7 @@ void read_IR_sensors(){
   LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
 
-void intialise_IR_sensors(){
+void intialise_sensors(){
 double MR1sum, MR2sum, LR1sum, LR3sum;
 
   for (int i = 0; i<=iterations; i++){
@@ -747,7 +662,7 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
     LR3arr[i] = LR3mm_reading;
     HC_SR04_range();
     ultraArray[i] = sonar_cm;
-    delay(5);
+    delay(50);
   }
   MR1mm = average_array(MR1arr, 0);
   MR2mm = average_array(MR2arr, 0);
@@ -755,11 +670,11 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
   LR3mm = average_array(LR3arr, 0);
   sonar_average = average_array(ultraArray, 0);
 
-  //Set IR variance to 0
-  MR1var = 0;
-  MR2var = 0;
-  LR1var = 0;
-  LR3var = 0;
+  //If using Kalman to filter, Set IR variance to 0
+  // MR1var = 0;
+  // MR2var = 0;
+  // LR1var = 0;
+  // LR3var = 0;
 }
 
 double average_array(double* input_array, double last_average){
@@ -782,54 +697,148 @@ double average_array(double* input_array, double last_average){
   }
 }
 
-
-void print_IR_values(){
-  BluetoothSerial.print("MR1 DISTANCE:");
-  BluetoothSerial.println(MR1mm);
-  BluetoothSerial.print("MR2 DISTANCE:");
-  BluetoothSerial.println(MR2mm);
-  BluetoothSerial.print("LR1 DISTANCE:");
-  BluetoothSerial.println(LR1mm);
-  BluetoothSerial.print("LR3 DISTANCE:");
-  BluetoothSerial.println(LR3mm);
+double measure_sonar(){
+  HC_SR04_range();
+  return (KalmanSonar(sonar_cm));
+  // ultraArray[array_index] = sonar_cm;
+  // sonar_average = average_array(ultraArray, sonar_average);
+  // array_index++;
+  // if (array_index == 20){
+  //   array_index = 0;
+  // }
+  
+  // BluetoothSerial.print("Sonar Average:");
+  // BluetoothSerial.println(sonar_average);
+  // return sonar_average;
 }
 
-void filter_IR_reading(){
-//Add values to given array
-  MR1arr[array_index] = MR1mm_reading;
-  MR2arr[array_index] = MR2mm_reading;
-  LR1arr[array_index] = LR1mm_reading;
-  LR3arr[array_index] = LR3mm_reading;
+void Gyro()
+{
+    // convert the 0-1023 signal to 0-5v
+    gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
 
-  //Set next array index
-  array_index++;
-  if (array_index >=20){
-    array_index = 0;
+    // find the voltage offset the value of voltage when gyro is zero (still)
+    gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
+
+    // read out voltage divided the gyro sensitivity to calculate the angular velocity
+    float angularVelocity = gyroRate / 0.007; // from Data Sheet, gyroSensitivity is 0.007 V/dps
+
+    // if the angular velocity is less than the threshold, ignore it
+    if (angularVelocity >= 1.50 || angularVelocity <= -1.5)
+    {
+        gyroAngleChange = millis()-gyroTime;
+        gyroAngleChange = 1000 / gyroAngleChange;
+        gyroAngleChange = angularVelocity / gyroAngleChange;
+        gyroAngle += gyroAngleChange;
+    }
+
+    gyroTime = millis();
+}
+
+float ClosedLoopTurn(float speed, float sonar_aim)
+{
+  float e, correction_val, current_dist;
+  float kp_angle = 30;
+  float ki_angle = 0.1;
+
+  current_dist = measure_sonar();
+
+  e = current_dist - sonar_aim;
+
+  correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
+
+  ki_integral_angle += e;
+
+  left_font_motor.writeMicroseconds(1500 + correction_val);
+  left_rear_motor.writeMicroseconds(1500 + correction_val);
+  right_rear_motor.writeMicroseconds(1500 + correction_val);
+  right_font_motor.writeMicroseconds(1500 + correction_val);
+
+  BluetoothSerial.print("e:            ");
+  BluetoothSerial.println(e);
+  BluetoothSerial.print("correction:   ");
+  BluetoothSerial.println(correction_val);
+  BluetoothSerial.print("ki:           ");
+  BluetoothSerial.println(ki_integral_angle);
+  BluetoothSerial.println(" ");
+  return e;
+}
+
+void ClosedLoopStraight(int speed_val)
+{
+    float e, correction_val;
+    float kp_gyro = 40;
+    float ki_gyro = 10;
+
+    e = gyroAngleChange;
+
+    correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -100, 100);
+
+    ki_integral_gyro += e;
+
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val);
+    right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
+}
+
+
+
+void ClosedLoopStaph(int speed_val)
+{
+    float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
+    
+    float e, correction_val;
+    float kp_gyro = 40;
+    float ki_gyro = 10;
+    float kp_sonar = 15;
+    float ki_sonar = 0.5;
+
+
+
+    e_gyro = gyroAngleChange;
+
+    e_sonar = sonar_dist - sonar_average;
+
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -100, 100);
+
+    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -150, 150);
+
+    ki_integral_gyro += e_gyro;
+    ki_integral_sonar += e_sonar;
+
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
+
+    BluetoothSerial.print("e:                     ");
+    BluetoothSerial.println(e_sonar);
+    BluetoothSerial.print("correction:            ");
+    BluetoothSerial.println(correction_val_sonar);
+    BluetoothSerial.print("ki:                    ");
+    BluetoothSerial.println(ki_integral_sonar);
+    BluetoothSerial.print("current reading:       ");
+    BluetoothSerial.println(sonar_cm);
+    BluetoothSerial.print("Aimed reading:         ");
+    BluetoothSerial.println(sonar_dist);
+}
+
+
+double KalmanSonar(double rawdata){   // Kalman Filter
+  if (rawdata >= sonar_average + 20 || rawdata <= sonar_average - 20 || rawdata < 20){ //If the value is absolutely outrageous, ignore it and use the last recorded value
+    return sonar_average;
   }
+  else{
+    double a_post_est, a_priori_var, a_post_var, kalman_gain;
 
-  //Average these to final value 
-  MR1mm = average_array(MR1arr, MR1mm);
-  MR2mm = average_array(MR2arr, MR2mm);
-  LR1mm = average_array(LR1arr, LR1mm);
-  LR3mm = average_array(LR3arr, LR3mm);
+    a_priori_var = sonar_variance + process_noise_sonar; 
 
-  // MR1mm = IR_Kalman(MR1mm_reading, MR1mm, &MR1var);
-  // MR2mm = IR_Kalman(MR2mm_reading, MR2mm, &MR2var);
-  // LR1mm = IR_Kalman(LR1mm_reading, LR1mm, &LR1var);
-  // LR3mm = IR_Kalman(LR3mm_reading, LR3mm, &LR3var);
-}
-
-
-double IR_Kalman(double distance_reading, double last_reading, double* last_var){
-  double post_est, prior_var, post_var, kalman_gain;
-
-  //NEED TO DEFINE process_noise AND sensor_noise for function to work
-
-  prior_var = *last_var + process_noise; //variation in last reading
-
-  kalman_gain = prior_var/(prior_var + sensor_noise); //gain correction of prior variation in last reading
-  post_est  = last_reading + kalman_gain*(distance_reading-last_reading);
-  post_var = (1-kalman_gain)*prior_var;
-  *last_var = post_var;
-  return (post_est);
+    kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
+    a_post_est = sonar_average + kalman_gain*(rawdata-sonar_average);
+    sonar_variance = (1 * kalman_gain)*a_priori_var;
+    sonar_average = rawdata;
+    return a_post_est;
+  }
+    
 }
