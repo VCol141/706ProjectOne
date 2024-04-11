@@ -50,6 +50,7 @@ enum homing_state {
     FIND_CLOSEST_WALL,
     GO_HOME,
 };
+
 homing_state home_state = ROTATE;
 homing_state previous_home_state;
 
@@ -125,6 +126,7 @@ double process_noise = 10;
 /***ULTRASONIC***/
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
+const unsigned int MAX_DIST = 23200;
 
 double ultraArray[20];
 double sonar_average = 0;
@@ -159,10 +161,13 @@ float gyroAngleChange = 0;
 float gyroAngle = 0;
 float error = 0;
 float ki_integral_gyro = 0;
-byte serialRead = 0;
-
 float gyroTime = 0;
 
+//Kalman variables
+float prev_val_gyro;
+float last_var_gyro = 999;
+float sensor_noise_gyro = 10;
+float process_noise_gyro = 1;
 
 /***SERVO***/
 Servo turret_motor;
@@ -232,19 +237,16 @@ STATE initialising() {
   
   enable_motors();
 
-  BluetoothSerial.println("Finished sweep");
-
-
   float sum1 = 0;
   // Gyro Setup
+  prev_val_gyro = analogRead(gyroPin);
   for (int i = 0; i < 100; i++)
   { // read 100 values of voltage when gyro is at still, to calculate the zero-drift.
-      gyroVal = analogRead(gyroPin);
+      gyroVal = KalmanGyro(analogRead(gyroPin));
       sum1 += gyroVal;
       delay(5);
   }
   gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
-
   
   intialise_sensors();
   return HOMING;
@@ -288,14 +290,19 @@ STATE homing(){
       else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
         stop();
         delay(1000); //allow motors to power off before completely switching the direction
+        gyroAngle = 0;
         BluetoothSerial.println("trying to face wall");
+        BluetoothSerial.print("AIMING FOR ANGLE: ");
+        BluetoothSerial.println(gyro_aim);
         home_state = FACE_WALL;
       }
       break;
     case FACE_WALL:
+      BluetoothSerial.print("CURRENT ANGLE: ");
+      BluetoothSerial.println(gyroAngle);
       float sonar_error;
-      sonar_error = ClosedLoopTurn(200, wall-0.8);
-      if (abs(sonar_error) <= 0.5){
+      sonar_error = ClosedLoopWallTurn(200, wall, -gyro_aim); //Aim about 8 degrees back from the actual measured angle
+      if (abs(sonar_error) <= 1){
         wall_settled++;
         if (wall_settled == 10){
           stop();
@@ -616,7 +623,7 @@ void read_IR_sensors(){
 void Gyro()
 {
     // convert the 0-1023 signal to 0-5v
-    gyroRate = (analogRead(gyroPin) * 5.00) / 1023;
+    gyroRate = (KalmanGyro(analogRead(gyroPin)) * 5.00) / 1023;
 
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
@@ -635,6 +642,20 @@ void Gyro()
 
     gyroTime = millis();
 }
+
+double KalmanGyro(double rawdata){   // Kalman Filter
+    double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
+
+    a_priori_var = last_var_gyro + process_noise_gyro; 
+
+    kalman_gain = a_priori_var/(a_priori_var+sensor_noise_gyro);
+    a_post_est = prev_val_gyro + kalman_gain*(rawdata-prev_val_gyro);
+    a_post_var = (1- kalman_gain)*a_priori_var;
+    last_var_gyro = a_post_var;
+    prev_val_gyro = rawdata;
+    return a_post_est;
+}
+
 
 
 /*******************OPEN LOOP PATHING (HISTORIC)**********************/
@@ -682,15 +703,18 @@ void open_loop_path(double sonar_cm)
 
 
 /*******************CLOSED LOOP FUNCTIONS**********************/
-float ClosedLoopTurn(float speed, float sonar_aim)
+float ClosedLoopWallTurn(float speed, float sonar_aim, float gyro_aim)
 {
   float e, correction_val, current_dist;
-  float kp_angle = 30;
+  float kp_angle = 10;
   float ki_angle = 0.1;
 
-  current_dist = measure_sonar();
+  e = gyro_aim - gyroAngle;
 
-  e = current_dist - sonar_aim;
+  // float kp_angle = 30;
+  // float ki_angle = 0.1;
+  // current_dist = measure_sonar();
+  // e = current_dist - sonar_aim - 0.8;
 
   correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
 
@@ -701,12 +725,12 @@ float ClosedLoopTurn(float speed, float sonar_aim)
   right_rear_motor.writeMicroseconds(1500 + correction_val);
   right_font_motor.writeMicroseconds(1500 + correction_val);
 
-  BluetoothSerial.print("e:            ");
+  BluetoothSerial.print("Current Error: ");
   BluetoothSerial.println(e);
-  BluetoothSerial.print("correction:   ");
-  BluetoothSerial.println(correction_val);
-  BluetoothSerial.print("ki:           ");
-  BluetoothSerial.println(ki_integral_angle);
+  // BluetoothSerial.print("correction:   ");
+  // BluetoothSerial.println(correction_val);
+  // BluetoothSerial.print("ki:           ");
+  // BluetoothSerial.println(ki_integral_angle);
   BluetoothSerial.println(" ");
   return e;
 }
