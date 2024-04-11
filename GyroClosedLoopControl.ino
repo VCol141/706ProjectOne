@@ -218,6 +218,11 @@ STATE initialising()
 
 int distance_aim = 20;
 
+#define MIN_DISTANCE 20
+#define MAX_DISTANCE 170
+
+#define STRAFE_DISTANCE 20
+
 STATE execution()
 {
     STATE return_state = RUNNING;
@@ -234,14 +239,11 @@ STATE execution()
 
     switch(run_state)
     {
-
         case STRAIGHT:
 
         ClosedLoopStraight(u_distance);
 
-        ki_distance_sonar += e_distance;
-
-        if ((!forward_backward && (sonar_cm < 20)) || (forward_backward && (sonar_cm > 170))) 
+        if ((!forward_backward && (sonar_cm <= MIN_DISTANCE)) || (forward_backward && (sonar_cm >= MAX_DISTANCE))) 
         {
             stop();
 
@@ -253,8 +255,8 @@ STATE execution()
             
             ki_distance_sonar = 0;
             turret_motor.write(0);
-            distance_aim = 20;
-            
+            distance_aim = sonar_cm - STRAFE_DISTANCE;
+
             delay(1000);
             timeinitial = millis();
         }
@@ -267,7 +269,7 @@ STATE execution()
 
         ClosedLoopStaph(u_distance);
 
-        if ((millis() - timeinitial) > 1000)
+        if (sonar_cm <= distance_aim)
         {
             stop();
 
@@ -280,14 +282,15 @@ STATE execution()
             BluetoothSerial.println(" ");
 
             turret_motor.write(90);
-            distance_aim = (forward_backward) ? 170 : 20;
+            distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
             ki_distance_sonar = 0;
 
             delay(1000);
         }
         break;
-
     };
+
+    ki_distance_sonar += e_distance;
 
     return return_state;
 }
