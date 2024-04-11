@@ -169,6 +169,7 @@ void loop(void)
     };
 
     Gyro();
+    Sonar();
 }
 
 STATE initialising()
@@ -221,9 +222,8 @@ STATE execution()
     {
         case STRAIGHT:
         (forward_backward == 0) ? ClosedLoopStraight(speed_val) : ClosedLoopStraight(-speed_val);
-        Sonar();
 
-        if ((!forward_backward && (sonar_dist < 25)) || (forward_backward && (sonar_dist > 100))) 
+        if ((!forward_backward && (sonar_cm < 25)) || (forward_backward && (sonar_cm > 100))) 
         {
             stop();
 
@@ -238,13 +238,18 @@ STATE execution()
 
             average_array();
 
+            BluetoothSerial.println(" ");
             BluetoothSerial.println("Finished Straight");
+            BluetoothSerial.println(sonar_average);
+            BluetoothSerial.println(" ");
+            
 
+            delay(1000);
             timeinitial = millis();
         }
 
         BluetoothSerial.print("Sonar Reading: ");
-        BluetoothSerial.println(sonar_dist);
+        BluetoothSerial.println(sonar_cm);
         break;
 
         case STRAFE:
@@ -253,13 +258,18 @@ STATE execution()
         if ((millis() - timeinitial) > 1000)
         {
             stop();
+            delay(1000);
             run_state = STRAIGHT;
             forward_backward = !forward_backward;
+            BluetoothSerial.println(" ");
             BluetoothSerial.println("Finished Strafe");
+            BluetoothSerial.println(" ");
         }
 
         BluetoothSerial.print("Timer Reading: ");
         BluetoothSerial.println(millis() - timeinitial);
+        BluetoothSerial.print("Sonar:         ");
+        BluetoothSerial.println(sonar_cm);
         break;
 
     };
@@ -296,7 +306,7 @@ void ClosedLoopStaph(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
 
-    e_gyro = gyroAngleChange;
+    (abs(gyroAngleChange) < 3) ? e_gyro = gyroAngleChange : e_gyro = 0;
 
     e_sonar = sonar_dist - sonar_average;
 
@@ -317,7 +327,7 @@ void ClosedLoopStraight(int speed_val)
 {
     float e, correction_val;
 
-    e = gyroAngleChange;
+    (abs(gyroAngleChange) < 3) ? e = gyroAngleChange : e = 0;
 
     correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
