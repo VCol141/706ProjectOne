@@ -18,7 +18,7 @@
 #define OUTPUTBLUETOOTHMONITOR 1
 
 // Board measurements
-#define BOARD_WIDTH 925
+#define BOARD_WIDTH 150
 #define BOARD_LENGTH 1990
 #define WALL_LIMIT_DISTANCE 150
 
@@ -32,34 +32,34 @@ SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 enum STATE {
   INITIALISING,
   HOMING,
+  ALIGNING,
   RUNNING,
   STOPPED
 };
 
 //Homing variables
+//Homing variables
 enum homing_state {
     ROTATE,
     APPROACHING_WALL,
     FIND_WALL,
-    FACE_WALL,
-    GET_TO_WALL,
-    FIND_MISALAIGNMENT,
-    ALIGN_ROBOT,
-    FIND_ORIENTATION,
-    TURN_90,
-    FIND_CLOSEST_WALL,
-    GO_HOME,
+    FACE_WALL
 };
 
 homing_state home_state = ROTATE;
-homing_state previous_home_state;
 
-// Enums for which wall we are starting at before pathing
-enum closest_wall {
-  LEFT,
-  RIGHT
+enum aligning_state{
+    //GET_TO_WALL,
+    //FIND_MISALAIGNMENT,
+    //ALIGN_ROBOT,
+    FIND_ORIENTATION,
+    TURN,
+    FIND_CLOSEST_WALL,
+    GO_HOME
 };
-closest_wall starting_wall;
+
+aligning_state align_state = FIND_ORIENTATION;
+bool found_closest_wall;
 
 //Turning directions 
 enum turning_dir {
@@ -67,6 +67,13 @@ enum turning_dir {
     CW
 };
 turning_dir turn_dir;
+
+enum strafing_dir {
+    LEFT,
+    RIGHT
+};
+
+strafing_dir strafe_dir;
 
 //Pathing variables
 enum pathing_state {
@@ -221,6 +228,9 @@ void loop(void) //main loop
     case HOMING:
       machine_state = homing();
       break;
+    case ALIGNING:
+      machine_state = align();
+      break;
     case RUNNING: //Lipo Battery Volage OK
       machine_state =  running();
       break;
@@ -249,7 +259,7 @@ STATE initialising() {
   gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
   
   intialise_sensors();
-  return HOMING;
+  return ALIGNING;
 }
 
 /*******************HOMING**********************/
@@ -302,104 +312,142 @@ STATE homing(){
       BluetoothSerial.print("CURRENT ANGLE: ");
       BluetoothSerial.println(gyroAngle);
       float sonar_error;
-      sonar_error = ClosedLoopWallTurn(130, wall, gyro_aim); //Aim about 8 degrees back from the actual measured angle
+      sonar_error = ClosedLoopTurn(130, gyro_aim); //Aim about 8 degrees back from the actual measured angle
       if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
+          wall_settled = 0;
           stop();
           delay(2000);
           BluetoothSerial.println("TURNING STOPPED");
           gyroAngle = 0;
-          home_state = FIND_ORIENTATION;
+
+          return ALIGNING;
         }
       }
       else{
         wall_settled = 0;
       }
       break;
-    case GET_TO_WALL:
-      if(measure_sonar() < 150){
-        stop();
-        home_state = FIND_ORIENTATION;
-      }else{
-        ClosedLoopStraight(speed_val);
-      }
-      break;
-
-    case FIND_MISALAIGNMENT:
-
-      //calculate the misalignment angle of the robot using trig
-      float IR_base_length = 100;
-      float IR_height_offset = LR1mm_reading - MR1mm_reading;
-      float IR_angle_error = atan(IR_height_offset/IR_base_length);
-      IR_angle_error = IR_angle_error * (3.14 / 180);
-
-    case ALIGN_ROBOT:
-      //turn the robot that amount
-      ClosedLoopTurn(speed_val, IR_angle_error);
-
-      //idk the exit condition PLS ADD VLAD
-      home_state = FIND_CLOSEST_WALL;
-      break;
-
-    case FIND_ORIENTATION:
-      //turn the ultrasonic servo both sides and get measurements
-      turret_motor.writeMicroseconds(2000);
-      delay(500);
-      float right_side_distance = measure_sonar();
-      turret_motor.writeMicroseconds(1000);
-      delay(500);
-      float left_side_distance = measure_sonar();
-
-      //find which corner to go to
-      starting_wall = (right_side_distance < left_side_distance) ? RIGHT : LEFT;
-
-      int turret_motor_dir = (starting_wall == RIGHT) ? 2000 : 1000;
-
-      //check if the robot is in the right orientation
-      if(right_side_distance + left_side_distance > BOARD_WIDTH){
-        previous_home_state = TURN_90;        //if it isnt, we need to turn 90
-        home_state = TURN_90;
-      }else{
-        turret_motor.writeMicroseconds(turret_motor_dir);     //turn the turret motor back to its closest direction
-        previous_home_state = GO_HOME;        //it is in the right orientation
-        home_state = GO_HOME;
-      }
-      break;
-
-    case TURN_90:
-      turret_motor.writeMicroseconds(1500);       //make sonar straight again
-      ClosedLoopTurn(speed_val, 90);
-      //idk the exit condition PLS ADD VLAD
-      home_state = GO_HOME;
-      break;
-
-    case GO_HOME:
-      //if we had to turn, go either up or down to get to the nearest corner until we reach the corner
-      if((previous_home_state == TURN_90 && measure_sonar() > 150) || (previous_home_state == TURN_90 && MR2mm_reading > 150)){
-        if(starting_wall == RIGHT){
-          ClosedLoopStraight(speed_val);
-        }else{
-          ClosedLoopStraight(-speed_val);
-        }
-
-      //if we didnt have to turn, go left or right to get to the nearest corner
-      }else if((previous_home_state == GO_HOME && measure_sonar() > 150)){
-        if(starting_wall == RIGHT){
-          ClosedLoopStrafe(speed_val);
-        }else{
-          ClosedLoopStrafe(-speed_val);
-        }
-
-      //once we are close, stop motors
-      }else{
-        stop();
-        return RUNNING;
-      }
-      break;
   }
   return HOMING;
 }
+
+/*******************ALIGNING*********************/
+STATE align(){
+  //BluetoothSerial.print("alligning: ");
+  //BluetoothSerial.println(align_state);
+
+  switch (align_state){
+    case FIND_ORIENTATION:
+      if(!found_closest_wall){
+        float starting_wall;
+        //turn the ultrasonic servo both sides and get measurements
+        turret_motor.write(0);
+        delay(200);
+        float right_side_distance = average_sonar();
+        BluetoothSerial.print("RIGHT DIST: ");
+        BluetoothSerial.println(right_side_distance);
+
+        turret_motor.write(180);
+        delay(500);
+        float left_side_distance = average_sonar();
+        BluetoothSerial.print("LEFT DIST: ");
+        BluetoothSerial.println(left_side_distance);
+
+        //find which corner to go to
+        starting_wall = (right_side_distance < left_side_distance) ? RIGHT : LEFT;
+
+        int turret_motor_dir = (starting_wall == RIGHT) ? 2000 : 1000;
+        turret_motor.write(90);
+        found_closest_wall = true;
+      }else{
+        //check if the robot is in the right orientation
+        if(right_side_distance + left_side_distance > BOARD_WIDTH){
+          BluetoothSerial.println("TURNING 90");
+          float turn_error;
+          turn_error = ClosedLoopTurn(130, 90); //Aim 90 degrees
+          if (abs(turn_error) <= 5){
+            wall_settled++;
+            if (wall_settled == 10){
+              stop();
+              delay(2000);
+              BluetoothSerial.println("TURNING STOPPED");
+              gyroAngle = 0;      //make sonar straight again
+              align_state = GO_HOME;
+            }
+      } 
+        }else{
+              //turn the turret motor back to its closest direction
+          align_state = GO_HOME;        //it is in the right orientation
+          BluetoothSerial.println("GOING HOME");
+        }
+      }
+
+
+      break;
+
+    // case GET_TO_WALL:
+    //   if(measure_sonar() < 150){
+    //     stop();
+    //     align_state = FIND_ORIENTATION;
+    //   }else{
+    //     ClosedLoopStraight(speed_val);
+    //   }
+    //   break;
+
+    // case FIND_MISALAIGNMENT:
+
+    //   //calculate the misalignment angle of the robot using trig
+    //   float IR_base_length = 100;
+    //   float IR_height_offset = LR1mm_reading - MR1mm_reading;
+    //   float IR_angle_error = atan(IR_height_offset/IR_base_length);
+    //   IR_angle_error = IR_angle_error * (3.14 / 180);
+    //   align_state = ALIGN_ROBOT;
+    //   break;
+
+    // case ALIGN_ROBOT:
+    //   //turn the robot that amount
+    //   ClosedLoopTurn(speed_val, IR_angle_error);
+
+    //   //idk the exit condition PLS ADD VLAD
+    //   align_state = FIND_CLOSEST_WALL;
+    //   break;
+
+    case TURN:
+      BluetoothSerial.println("TURN ATTEMPT MADE");
+      break;
+
+    case GO_HOME:
+      BluetoothSerial.print("Waiting to go home");
+      delay(1000);
+
+      // //if we had to turn, go either up or down to get to the nearest corner until we reach the corner
+      // if((previous_home_state == TURN && measure_sonar() > 150) || (previous_home_state == TURN && MR2mm_reading > 150)){
+      //   if(starting_wall == RIGHT){
+      //     ClosedLoopStraight(speed_val);
+      //   }else{
+      //     ClosedLoopStraight(-speed_val);
+      //   }
+
+      // //if we didnt have to turn, go left or right to get to the nearest corner
+      // }else if((previous_home_state == GO_HOME && measure_sonar() > 150)){
+      //   if(starting_wall == RIGHT){
+      //     ClosedLoopStrafe(speed_val);
+      //   }else{
+      //     ClosedLoopStrafe(-speed_val);
+      //   }
+
+      // //once we are close, stop motors
+      // }else{
+      //   stop();
+      //   return RUNNING;
+      // }
+      break;
+  }
+  return ALIGNING;
+}
+
 
 /*******************RUNNING**********************/
 STATE running() {
@@ -533,10 +581,11 @@ double measure_sonar(){
 
 
 double KalmanSonar(double rawdata){   // Kalman Filter
-  if (rawdata >= sonar_average + 20 || rawdata <= sonar_average - 20 || rawdata < 20){ //If the value is absolutely outrageous, ignore it and use the last recorded value
+  if (rawdata < 20){ //If the value is absolutely outrageous, ignore it and use the last recorded value
     return sonar_average;
   }
   else{
+    rawdata = constrain(rawdata, sonar_average - 20, sonar_average + 20);
     double a_post_est, a_priori_var, a_post_var, kalman_gain;
 
     a_priori_var = sonar_variance + process_noise_sonar; 
@@ -545,8 +594,18 @@ double KalmanSonar(double rawdata){   // Kalman Filter
     a_post_est = sonar_average + kalman_gain*(rawdata-sonar_average);
     sonar_variance = (1 * kalman_gain)*a_priori_var;
     sonar_average = rawdata;
+    BluetoothSerial.println("Kalman");
     return a_post_est;
   }   
+}
+
+double average_sonar(){
+  for (int i = 0; i<=iterations; i++){
+    HC_SR04_range();
+    ultraArray[i] = sonar_cm;
+    delay(10);
+  }
+  return average_array(ultraArray, 0);
 }
 
 
@@ -562,7 +621,7 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
     LR3arr[i] = LR3mm_reading;
     HC_SR04_range();
     ultraArray[i] = sonar_cm;
-    delay(50);
+    delay(5);
   }
   MR1mm = average_array(MR1arr, 0);
   MR2mm = average_array(MR2arr, 0);
@@ -704,18 +763,13 @@ void open_loop_path(double sonar_cm)
 
 
 /*******************CLOSED LOOP FUNCTIONS**********************/
-float ClosedLoopWallTurn(float speed, float sonar_aim, float gyro_aim)
+float ClosedLoopTurn(float speed, float gyro_aim)
 {
-  float e, correction_val, current_dist;
+  float e, correction_val;
   float kp_angle = 5;
   float ki_angle = 0;
 
   e = gyro_aim - gyroAngle;
-
-  // float kp_angle = 30;
-  // float ki_angle = 0.1;
-  // current_dist = measure_sonar();
-  // e = current_dist - sonar_aim - 0.8;
 
   correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
 
@@ -756,7 +810,7 @@ void ClosedLoopStraight(int speed_val)
 }
 
 
-void ClosedLoopStrafe(int speed_val)
+void ClosedLoopStafe(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
     
