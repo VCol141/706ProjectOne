@@ -225,18 +225,22 @@ STATE execution()
 
         if ((!forward_backward && (sonar_dist < 25)) || (forward_backward && (sonar_dist > 100))) 
         {
+            stop();
+
             run_state = STRAFE; 
-            timeinitial = millis();
 
             for (int i = 0; i < sonar_MA_n; i++)
             {
               Sonar();
               sonar_values[i] = sonar_cm;
+              delay(5);
             }
 
             average_array();
 
             BluetoothSerial.println("Finished Straight");
+
+            timeinitial = millis();
         }
 
         BluetoothSerial.print("Sonar Reading: ");
@@ -248,15 +252,27 @@ STATE execution()
 
         if ((millis() - timeinitial) > 1000)
         {
+            stop();
             run_state = STRAIGHT;
             forward_backward = !forward_backward;
             BluetoothSerial.println("Finished Strafe");
         }
+
+        BluetoothSerial.print("Timer Reading: ");
+        BluetoothSerial.println(millis() - timeinitial);
         break;
 
     };
 
     return return_state;
+}
+
+void stop() //Stop
+{
+  left_font_motor.writeMicroseconds(1500);
+  left_rear_motor.writeMicroseconds(1500);
+  right_rear_motor.writeMicroseconds(1500);
+  right_font_motor.writeMicroseconds(1500);
 }
 
 void ClosedLoopTurn(float speed, float angle_val)
@@ -279,14 +295,6 @@ void ClosedLoopTurn(float speed, float angle_val)
 void ClosedLoopStaph(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
-    
-    for (int i = 0; i < sonar_MA_n; i++)
-    {
-        Sonar();
-        sonar_values[i] = sonar_cm;
-    }
-
-    average_array();
 
     e_gyro = gyroAngleChange;
 
@@ -448,15 +456,15 @@ double KalmanSonar(double rawdata){   // Kalman Filter
     return a_post_est;
 }
 
-double average_array()
+void average_array()
 {
     double sum = 0;
   
     for (int i = 0; i <= sonar_MA_n; i++)
     {
         // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-        sum += (sonar_average == 0 ? sonar_values[i] : constrain(sonar_values[i], sonar_average - sonar_range, sonar_average + sonar_range));
+        sum += sonar_values[i];
     }
 
-    return (sum == 0) ? 0 : sum / sonar_MA_n;
+    sonar_average = sum / sonar_MA_n;
 }
