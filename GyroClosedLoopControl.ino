@@ -106,13 +106,12 @@ int MR_B = A4;
 int LR_F = A5;
 int MR_F = A6;
 
-int ir_MA_n = 20;
-float ir_values[20];
-float ir_average;
+// Sonar
+int sonar_MA_n = 20;
+float sonar_values[20];
+float sonar_average;
 
 #define CONTROL_CONSTRAINT_IR 150
-
-Servo turret_motor;
 
 void setup(void)
 {
@@ -165,18 +164,6 @@ void loop(void)
     case STARTUP:
         machine_state = initialising();
         gyroAngle = 0;
-
-        BluetoothSerial.println(" ");
-        for (int i = 0; i < ir_MA_n; i++)
-        {
-          ir_values[i] = analogRead((forward_backward) ? MR_B : MR_F);
-          BluetoothSerial.println(ir_values[i]);
-          delay(25);
-        }
-        
-        BluetoothSerial.println(" ");
-        average_array();
-
         break;
     case RUNNING:
         machine_state = execution();
@@ -255,14 +242,26 @@ STATE execution()
             
             ki_distance_sonar = 0;
             turret_motor.write(0);
-            distance_aim = sonar_cm - STRAFE_DISTANCE;
-
             delay(1000);
+
+            for (int i = 0; i < sonar_MA_n; i++)
+            {
+                Sonar();
+                sonar_values[i] = sonar_cm;
+                delay(5);
+            }
+
+            average_array();
+
+            distance_aim = sonar_average - STRAFE_DISTANCE;
+
+            BluetoothSerial.print("current Sonar: ");
+            BluetoothSerial.println(distance_aim);
             timeinitial = millis();
         }
 
         BluetoothSerial.print("sonar Reading: ");
-        BluetoothSerial.println(analogRead(sonar_cm));
+        BluetoothSerial.println(sonar_cm);
         break;
 
         case STRAFE:
@@ -285,8 +284,12 @@ STATE execution()
             distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
             ki_distance_sonar = 0;
 
-            delay(1000);
+            delay(100);
         }
+
+        BluetoothSerial.print("sonar Reading: ");
+        BluetoothSerial.println(sonar_cm);
+
         break;
     };
 
@@ -502,11 +505,11 @@ void average_array()
 {
     double sum = 0;
   
-    for (int i = 0; i < ir_MA_n; i++)
+    for (int i = 0; i < sonar_MA_n; i++)
     {
         // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
-        sum += ir_values[i];
+        sum += sonar_values[i];
     }
 
-    ir_average = sum / ir_MA_n;
+    sonar_average = sum / sonar_MA_n;
 }
