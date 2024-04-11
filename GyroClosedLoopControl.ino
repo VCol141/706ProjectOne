@@ -124,12 +124,12 @@ bool last_lap = 0;
 
 float distance_aim = 20;
 
-#define MIN_DISTANCE 15
-#define MAX_DISTANCE 160
-#define STRAFE_DISTANCE 10
+static int MIN_DISTANCE = 15;
+static int MAX_DISTANCE = 160;
+static int STRAFE_DISTANCE = 10;
 
-#define DISTANCE_OFFSET 2.5
-#define MIN_SIDE_DIST 20
+static int DISTANCE_OFFSET = 2.5;
+static int MIN_SIDE_DIST = 20;
 
 void setup(void)
 {
@@ -234,6 +234,8 @@ STATE corner()
 
   if(sonar_average > 50) { forward_backward = 0; }
 
+  BluetoothSerial.println(forward_backward);
+
   return RUNNING;
 }
 
@@ -241,17 +243,14 @@ void SonarCheck(float angle_in)
 {
     turret_motor.write(angle_in);
 
-    delay(100);
+    delay(1000);
 
     for (int i = 0; i < sonar_MA_n; i++)
     {
-        while (sonar_cm < 20)
-        {
-            Sonar();
-        }
+        Sonar();
+        sonar_values[i] = constrain(sonar_cm, 15, 300);
 
-        sonar_values[i] = sonar_cm;
-        delay(5);
+        delay(50);
     }
 
     average_array();
@@ -263,7 +262,7 @@ STATE execution()
     static RUN run_state = STRAIGHT;
 
     float e_distance, u_distance;
-    float kp_distance = 10;
+    float kp_distance = 20;
     float ki_distance = 0;
 
     e_distance = sonar_cm - distance_aim;
@@ -277,7 +276,7 @@ STATE execution()
 
             ClosedLoopStraight(u_distance);
 
-            if ((!forward_backward && (sonar_cm <= (MIN_DISTANCE + DISTANCE_OFFSET))) || (forward_backward && (sonar_cm >= (MAX_DISTANCE - DISTANCE_OFFSET)))) 
+            if ((!forward_backward && (sonar_cm <= 22)) || (forward_backward && (sonar_cm >= (MAX_DISTANCE - DISTANCE_OFFSET)))) 
             {
                 stop();
             
@@ -288,6 +287,8 @@ STATE execution()
                 (sonar_average < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
 
                 distance_aim = sonar_average - STRAFE_DISTANCE;
+
+                BluetoothSerial.println(sonar_average);
 
                 BluetoothSerial.println(" ");
                 BluetoothSerial.print("sonar Average: ");
@@ -304,15 +305,21 @@ STATE execution()
             {
                 stop();
 
-                run_state = STRAIGHT;
+                BluetoothSerial.println("Exit condition for strafe on");
+                BluetoothSerial.println(sonar_cm);
+                BluetoothSerial.println(distance_aim + DISTANCE_OFFSET);
 
-                forward_backward = !forward_backward;
+                run_state = STRAIGHT;
 
                 SonarCheck(90);
 
-                distance_aim = (forward_backward) ? MAX_DISTANCE : MIN_DISTANCE;
+                distance_aim = (forward_backward) ? MIN_DISTANCE : MAX_DISTANCE;
                 ki_distance_sonar = 0;
+
+                forward_backward = !forward_backward;
             }
+
+            BluetoothSerial.println(sonar_cm);
         break;
 
         case STOP:
@@ -544,6 +551,7 @@ void average_array()
     {
         // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
         sum += sonar_values[i];
+        BluetoothSerial.println(sonar_values[i]);
     }
 
     sonar_average = sum / sonar_MA_n;
