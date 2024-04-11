@@ -123,6 +123,7 @@ void setup(void)
     SerialCom = &Serial;
     SerialCom->begin(115200);
 
+    /*
     // Timer Set up
     TCCR2A = 0;// set entire TCCR2A register to 0
     TCCR2B = 0;// same for TCCR2B
@@ -136,6 +137,7 @@ void setup(void)
     TCCR2B |= (1 << CS22) | (1 << CS21);   
     // enable timer compare interrupt
     TIMSK2 |= (1 << OCIE2A);
+    */
 
     sei();
     delay(1000); // settling time but no really needed
@@ -149,6 +151,7 @@ void loop(void)
     {
     case STARTUP:
         machine_state = initialising();
+        gyroAngle = 0;
         break;
     case RUNNING:
         machine_state = execution();
@@ -158,6 +161,8 @@ void loop(void)
         machine_state = stopping();
         break;
     };
+
+    Gyro();
 }
 
 STATE initialising()
@@ -189,7 +194,9 @@ STATE initialising()
     }
 
     average_array();
+
     sonar_dist = sonar_average;
+
     sonar_average = 0;
 
     return RUNNING;
@@ -199,7 +206,7 @@ STATE execution()
 {
     STATE return_state = RUNNING;
 
-    delay(10);
+    ClosedLoopTurn(speed_val, 90);
 
     return return_state;
 }
@@ -207,8 +214,9 @@ STATE execution()
 void ClosedLoopTurn(float speed, float angle_val)
 {
     float e, correction_val;
+    float kp_angle = 3;
 
-    e = angle_val - gyroAngle;
+    (abs(gyroAngleChange) < 3) ? e = angle_val - gyroAngle : e = 0;
 
     correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
 
@@ -218,6 +226,8 @@ void ClosedLoopTurn(float speed, float angle_val)
     left_rear_motor.writeMicroseconds(1500 + correction_val);
     right_rear_motor.writeMicroseconds(1500 + correction_val);
     right_font_motor.writeMicroseconds(1500 + correction_val);
+
+    BluetoothSerial.println(e);
 }
 
 void ClosedLoopStaph(int speed_val)
@@ -331,7 +341,7 @@ void Gyro()
     if (angularVelocity >= 1.50 || angularVelocity <= -1.50 || gyroTime != 0)
     {
         // we are running a loop in T (of T/1000 second).
-        gyroAngleChange = (angularVelocity * timer_compensation) / (1000 * timer_frequency);
+        gyroAngleChange = (angularVelocity * (millis() - gyroTime)) / 1000;
         gyroAngle += gyroAngleChange;
     }
 

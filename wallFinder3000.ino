@@ -42,12 +42,24 @@ enum homing_state {
     APPROACHING_WALL,
     FIND_WALL,
     FACE_WALL,
-    FIND_ORIENTATION,
+    GET_TO_WALL,
+    FIND_MISALAIGNMENT,
     ALIGN_ROBOT,
+    FIND_ORIENTATION,
+    TURN_90,
+    FIND_CLOSEST_WALL,
     GO_HOME,
 };
 
 homing_state home_state = ROTATE;
+homing_state previous_home_state;
+
+// Enums for which wall we are starting at before pathing
+enum closest_wall {
+  LEFT,
+  RIGHT
+};
+closest_wall starting_wall;
 
 //Turning directions 
 enum turning_dir {
@@ -55,13 +67,6 @@ enum turning_dir {
     CW
 };
 turning_dir turn_dir;
-
-enum strafing_dir {
-    LEFT,
-    RIGHT
-};
-
-strafing_dir strafe_dir;
 
 //Pathing variables
 enum pathing_state {
@@ -312,17 +317,85 @@ STATE homing(){
         wall_settled = 0;
       }
       break;
-    case FIND_ORIENTATION:
-      delay(1000);
-      //Find where the other walls are to figure out where robot is
+    case GET_TO_WALL:
+      if(measure_sonar() < 150){
+        stop();
+        home_state = FIND_ORIENTATION;
+      }else{
+        ClosedLoopStraight(speed_val);
+      }
       break;
+
+    case FIND_MISALAIGNMENT:
+
+      //calculate the misalignment angle of the robot using trig
+      float IR_base_length = 100;
+      float IR_height_offset = LR1mm_reading - MR1mm_reading;
+      float IR_angle_error = atan(IR_height_offset/IR_base_length);
+      IR_angle_error = IR_angle_error * (3.14 / 180);
+
     case ALIGN_ROBOT:
-      //Turn robot to correct orientaion if incorrect
+      //turn the robot that amount
+      ClosedLoopTurn(speed_val, IR_angle_error);
+
+      //idk the exit condition PLS ADD VLAD
+      home_state = FIND_CLOSEST_WALL;
       break;
+
+    case FIND_ORIENTATION:
+      //turn the ultrasonic servo both sides and get measurements
+      turret_motor.writeMicroseconds(2000);
+      delay(500);
+      float right_side_distance = measure_sonar();
+      turret_motor.writeMicroseconds(1000);
+      delay(500);
+      float left_side_distance = measure_sonar();
+
+      //find which corner to go to
+      starting_wall = (right_side_distance < left_side_distance) ? RIGHT : LEFT;
+
+      int turret_motor_dir = (starting_wall == RIGHT) ? 2000 : 1000;
+
+      //check if the robot is in the right orientation
+      if(right_side_distance + left_side_distance > BOARD_WIDTH){
+        previous_home_state = TURN_90;        //if it isnt, we need to turn 90
+        home_state = TURN_90;
+      }else{
+        turret_motor.writeMicroseconds(turret_motor_dir);     //turn the turret motor back to its closest direction
+        previous_home_state = GO_HOME;        //it is in the right orientation
+        home_state = GO_HOME;
+      }
+      break;
+
+    case TURN_90:
+      turret_motor.writeMicroseconds(1500);       //make sonar straight again
+      ClosedLoopTurn(speed_val, 90);
+      //idk the exit condition PLS ADD VLAD
+      home_state = GO_HOME;
+      break;
+
     case GO_HOME:
-      //Robot uses gathered information to move to the corner of the field
-      //So strafe to relevant wall and move to back wall
-      //Once complete move to run
+      //if we had to turn, go either up or down to get to the nearest corner until we reach the corner
+      if((previous_home_state == TURN_90 && measure_sonar() > 150) || (previous_home_state == TURN_90 && MR2mm_reading > 150)){
+        if(starting_wall == RIGHT){
+          ClosedLoopStraight(speed_val);
+        }else{
+          ClosedLoopStraight(-speed_val);
+        }
+
+      //if we didnt have to turn, go left or right to get to the nearest corner
+      }else if((previous_home_state == GO_HOME && measure_sonar() > 150)){
+        if(starting_wall == RIGHT){
+          ClosedLoopStrafe(speed_val);
+        }else{
+          ClosedLoopStrafe(-speed_val);
+        }
+
+      //once we are close, stop motors
+      }else{
+        stop();
+        return RUNNING;
+      }
       break;
   }
   return HOMING;
@@ -683,7 +756,7 @@ void ClosedLoopStraight(int speed_val)
 }
 
 
-void ClosedLoopStaph(int speed_val)
+void ClosedLoopStrafe(int speed_val)
 {
     float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
     
