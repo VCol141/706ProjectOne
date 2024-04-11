@@ -85,6 +85,13 @@ enum pathing_state {
     STRAFE_LEFT
 };
 
+enum RUN
+{
+    STRAIGHT,
+    STRAFE,
+    STOP
+};
+
 pathing_state path_state;
 pathing_state last_path_state;
 
@@ -181,6 +188,37 @@ float process_noise_gyro = 1;
 /***SERVO***/
 Servo turret_motor;
 
+// VLADS STUFF
+float ki_straight_gyro = 0;
+
+float ki_strafe_gyro = 0;
+float ki_strafe_ir = 0;
+
+float ki_turn_gyro = 0;
+
+float ki_distance_sonar = 0;
+
+#define CONTROL_CONSTRAINT_GYRO 100
+
+// Run
+
+bool forward_backward = 0;
+
+bool last_lap = 0;
+
+float distance_aim = 20;
+
+static int MIN_DISTANCE = 15;
+static int MAX_DISTANCE = 160;
+static int STRAFE_DISTANCE = 10;
+
+static int DISTANCE_OFFSET = 2.5;
+static int MIN_SIDE_DIST = 20;
+
+// Sonar
+int sonar_MA_n = 30;
+float sonar_values[30];
+
 /*******************MAIN SET-UP**********************/
 void setup(void)
 {
@@ -241,6 +279,9 @@ void loop(void) //main loop
       break;
   };
   delay(10);
+
+  Gyro();
+  measure_sonar();
 }
 
 /*******************INITIALISING**********************/
@@ -271,8 +312,6 @@ STATE homing(){
       if (!is_battery_voltage_OK()) return STOPPED;
   #endif
 
-  //Run Gyro and initialise variables
-  Gyro();
   double sonar_value;
 
   switch (home_state){
@@ -336,8 +375,8 @@ STATE homing(){
 }
 
 /*******************ALIGNING*********************/
-STATE align(){
-  Gyro();
+STATE align()
+{
   //BluetoothSerial.print("alligning: ");
   //BluetoothSerial.println(align_state);
 
@@ -453,24 +492,101 @@ STATE align(){
   return ALIGNING;
 }
 
+void SonarCheck(float angle_in)
+{
+    turret_motor.write(angle_in);
 
+    delay(150);
+
+    for (int i = 0; i < sonar_MA_n; i++)
+    {
+        measure_sonar();
+        sonar_values[i] = constrain(sonar_cm, 15, 300);
+
+        delay(20);
+    }
+
+    average_array();
+}
+
+void average_array()
+{
+    double sum = 0;
+  
+    for (int i = 0; i < sonar_MA_n; i++)
+    {
+        // remove obviously rubbish readings, and keep current set of readings within expected range for better accuracy
+        sum += sonar_values[i];
+        BluetoothSerial.println(sonar_values[i]);
+    }
+
+    sonar_average = sum / sonar_MA_n;
+}
 /*******************RUNNING**********************/
 STATE running() {
 
-  #ifndef NO_READ_GYRO
-      Gyro();
-  #endif
+  STATE return_state = RUNNING;
 
-  #ifndef NO_HC-SR04
-    HC_SR04_range();
-    open_loop_path(sonar_cm);
-  #endif
+  static RUN run_state = STRAIGHT;
 
-  #ifndef NO_BATTERY_V_OK
-      if (!is_battery_voltage_OK()) return STOPPED;
-  #endif
+  float e_distance, u_distance;
+  float kp_distance = 20;
+  float ki_distance = 0;
 
-  return RUNNING;
+  e_distance = sonar_cm - distance_aim;
+  u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
+    
+
+  switch(run_state)
+  {
+      case STRAIGHT:
+
+          ClosedLoopStraight(u_distance);
+
+          if ((!forward_backward && (sonar_cm <= 22)) || (forward_backward && (sonar_cm >= (MAX_DISTANCE - DISTANCE_OFFSET)))) 
+          {
+              stop();
+            
+              ki_distance_sonar = 0;
+
+              SonarCheck(0);
+
+              (sonar_average < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+
+              distance_aim = sonar_average - STRAFE_DISTANCE;
+
+              BluetoothSerial.println(sonar_average);
+          }
+      break;
+
+      case STRAFE:
+
+          ClosedLoopStaph(u_distance);
+
+          if (sonar_cm <= (distance_aim + DISTANCE_OFFSET))
+          {
+              stop();
+
+              run_state = STRAIGHT;
+
+              SonarCheck(90);
+
+              distance_aim = (forward_backward) ? MIN_DISTANCE : MAX_DISTANCE;
+              ki_distance_sonar = 0;
+
+              forward_backward = !forward_backward;
+          }
+      break;
+
+      case STOP:
+          stop();
+          return_state = STOPPED;
+      break;
+  };
+
+  ki_distance_sonar += e_distance;
+
+  return return_state;
 }
 
 /*******************STOPPED**********************/
@@ -641,7 +757,6 @@ double MR1sum, MR2sum, LR1sum, LR3sum;
   // LR3var = 0;
 }
 
-
 double average_array(double* input_array, double last_average){
   double sum = 0;
   int count = 0;
@@ -662,7 +777,6 @@ double average_array(double* input_array, double last_average){
   }
 }
 
-
 /*******************IR FUNCTIONS**********************/
 double read_IR(double coefficient, double power, double sensor_reading){
   double sensor_mm;
@@ -679,10 +793,6 @@ void read_IR_sensors(){
   LR1mm_reading = read_IR(LR1coeff, LR1power, analogRead(A5));
   LR3mm_reading = read_IR(LR3coeff, LR3power, analogRead(A7));
 }
-
-
-
-
 
 /*******************GYRO FUNCTIONS**********************/
 void Gyro()
@@ -722,51 +832,6 @@ double KalmanGyro(double rawdata){   // Kalman Filter
 }
 
 
-
-/*******************OPEN LOOP PATHING (HISTORIC)**********************/
-void open_loop_path(double sonar_cm)
-{
-  switch (path_state){
-    case FORWARD:
-      if(sonar_cm < 15){
-          stop();
-          delay(500);
-          path_state = STRAFE_RIGHT;
-      }else{
-          forward();
-      }
-      last_path_state = FORWARD;
-      break;
-
-    case BACKWARD:
-      if(sonar_cm > 106.9){
-          stop();
-          delay(500);
-          path_state = (strafe_dir == LEFT) ? STRAFE_RIGHT: STRAFE_LEFT;
-      }else{
-          reverse();
-      }
-      last_path_state = BACKWARD;
-      break;
-
-    case STRAFE_RIGHT:
-      strafe_right();
-      delay(2000);          //adjust for desired strafing distance
-      stop();
-      delay(500);
-      path_state = (last_path_state == FORWARD) ? BACKWARD : FORWARD;
-      break;
-
-    case STRAFE_LEFT:
-      strafe_left();
-      delay(2000);          //adjust for desired strafing distance
-      stop();
-      path_state = (last_path_state == FORWARD ? BACKWARD : FORWARD);
-      break;
-  }
-}
-
-
 /*******************CLOSED LOOP FUNCTIONS**********************/
 float ClosedLoopTurn(float speed, float gyro_aim)
 {
@@ -799,14 +864,15 @@ float ClosedLoopTurn(float speed, float gyro_aim)
 void ClosedLoopStraight(int speed_val)
 {
     float e, correction_val;
-    float kp_gyro = 40;
-    float ki_gyro = 10;
 
-    e = gyroAngleChange;
+    float kp_gyro = 26;
+    float ki_gyro = 5;
 
-    correction_val = constrain(kp_gyro * e + ki_gyro * ki_integral_gyro, -100, 100);
+    (abs(gyroAngleChange) < 3) ? e = gyroAngleChange : e = 0;
 
-    ki_integral_gyro += e;
+    correction_val = constrain(kp_gyro * e + ki_gyro * ki_straight_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
+
+    ki_straight_gyro += e;
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
@@ -814,44 +880,34 @@ void ClosedLoopStraight(int speed_val)
     right_font_motor.writeMicroseconds(1500 - speed_val - correction_val);
 }
 
-
-void ClosedLoopStafe(int speed_val)
+void ClosedLoopStaph(int speed_val)
 {
-    float e_gyro, e_sonar, correction_val_gyro, correction_val_sonar;
+    float e_gyro, e_ir, correction_val_gyro = 0, correction_val_ir = 0;
+
+    float kp_gyro = 25;
+    float ki_gyro = 5;
+
+    //float kp_ir = 0;
+    //float ki_ir = 0;
+
+
+    (abs(gyroAngleChange) < 3) ? e_gyro = gyroAngleChange : e_gyro = 0;
+
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_strafe_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
     
-    float e, correction_val;
-    float kp_gyro = 40;
-    float ki_gyro = 10;
-    float kp_sonar = 15;
-    float ki_sonar = 0.5;
-    e_gyro = gyroAngleChange;
+    ki_strafe_gyro += e_gyro;
 
-    e_sonar = sonar_dist - sonar_average;
+    //e_ir = analogRead((forward_backward) ? MR_B : MR_F) - ir_average;
 
-    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_integral_gyro, -100, 100);
+    //correction_val_ir = constrain(kp_ir * e_ir + ki_ir * ki_strafe_ir, -CONTROL_CONSTRAINT_IR, CONTROL_CONSTRAINT_IR);
 
-    correction_val_sonar = constrain(kp_sonar * e_sonar + ki_sonar * ki_integral_sonar, -150, 150);
+    //ki_strafe_ir += e_ir;
 
-    ki_integral_gyro += e_gyro;
-    ki_integral_sonar += e_sonar;
-
-    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_sonar);
-    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_sonar);
-    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_sonar);
-    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_sonar);
-
-    BluetoothSerial.print("e:                     ");
-    BluetoothSerial.println(e_sonar);
-    BluetoothSerial.print("correction:            ");
-    BluetoothSerial.println(correction_val_sonar);
-    BluetoothSerial.print("ki:                    ");
-    BluetoothSerial.println(ki_integral_sonar);
-    BluetoothSerial.print("current reading:       ");
-    BluetoothSerial.println(sonar_cm);
-    BluetoothSerial.print("Aimed reading:         ");
-    BluetoothSerial.println(sonar_dist);
+    left_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro - correction_val_ir);
+    left_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro - correction_val_ir);
+    right_rear_motor.writeMicroseconds(1500 - speed_val - correction_val_gyro + correction_val_ir);
+    right_font_motor.writeMicroseconds(1500 + speed_val - correction_val_gyro + correction_val_ir);
 }
-
 
 /*******************PROVIDED FUNCTIONS**********************/
 void fast_flash_double_LED_builtin()
