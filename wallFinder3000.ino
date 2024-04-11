@@ -59,7 +59,9 @@ enum aligning_state{
 };
 
 aligning_state align_state = FIND_ORIENTATION;
-bool found_closest_wall;
+bool found_closest_wall = false;
+int right_side_distance, left_side_distance, across_distance;
+
 
 //Turning directions 
 enum turning_dir {
@@ -259,7 +261,7 @@ STATE initialising() {
   gyroZeroVoltage = sum1 / 100; // average the sum as the zero drifting
   
   intialise_sensors();
-  return ALIGNING;
+  return HOMING;
 }
 
 /*******************HOMING**********************/
@@ -335,35 +337,41 @@ STATE homing(){
 
 /*******************ALIGNING*********************/
 STATE align(){
+  Gyro();
   //BluetoothSerial.print("alligning: ");
   //BluetoothSerial.println(align_state);
 
   switch (align_state){
     case FIND_ORIENTATION:
       if(!found_closest_wall){
-        float starting_wall;
-        //turn the ultrasonic servo both sides and get measurements
-        turret_motor.write(0);
-        delay(200);
-        float right_side_distance = average_sonar();
-        BluetoothSerial.print("RIGHT DIST: ");
-        BluetoothSerial.println(right_side_distance);
+      float starting_wall;
+      //turn the ultrasonic servo both sides and get measurements
+      turret_motor.write(0);
+      delay(500);
+      right_side_distance = (int)average_sonar();
+      BluetoothSerial.print("RIGHT DIST: ");
+      BluetoothSerial.println(right_side_distance);
 
-        turret_motor.write(180);
-        delay(500);
-        float left_side_distance = average_sonar();
-        BluetoothSerial.print("LEFT DIST: ");
-        BluetoothSerial.println(left_side_distance);
+      turret_motor.write(180);
+      delay(500);
+      left_side_distance = (int)average_sonar();
+      BluetoothSerial.print("LEFT DIST: ");
+      BluetoothSerial.println(left_side_distance);
 
-        //find which corner to go to
-        starting_wall = (right_side_distance < left_side_distance) ? RIGHT : LEFT;
+      //find which corner to go to
+      starting_wall = (right_side_distance < left_side_distance) ? RIGHT : LEFT;
 
-        int turret_motor_dir = (starting_wall == RIGHT) ? 2000 : 1000;
-        turret_motor.write(90);
-        found_closest_wall = true;
+      //int turret_motor_dir = (starting_wall == RIGHT) ? 2000 : 1000;
+      turret_motor.write(90);
+      found_closest_wall = true;
+      across_distance = right_side_distance + left_side_distance;
+      BluetoothSerial.println(across_distance);
+
       }else{
+      //found closest all, will now turn or not turn
+
         //check if the robot is in the right orientation
-        if(right_side_distance + left_side_distance > BOARD_WIDTH){
+        if(across_distance > 150){
           BluetoothSerial.println("TURNING 90");
           float turn_error;
           turn_error = ClosedLoopTurn(130, 90); //Aim 90 degrees
@@ -373,18 +381,19 @@ STATE align(){
               stop();
               delay(2000);
               BluetoothSerial.println("TURNING STOPPED");
-              gyroAngle = 0;      //make sonar straight again
-              align_state = GO_HOME;
-            }
-      } 
-        }else{
               //turn the turret motor back to its closest direction
+              align_state = GO_HOME;        //it is in the right orientation
+              BluetoothSerial.println("GOING HOME");
+              gyroAngle = 0;      //make sonar straight again
+            }
+          } 
+        }
+        else{
           align_state = GO_HOME;        //it is in the right orientation
           BluetoothSerial.println("GOING HOME");
         }
+        
       }
-
-
       break;
 
     // case GET_TO_WALL:
@@ -413,10 +422,6 @@ STATE align(){
     //   //idk the exit condition PLS ADD VLAD
     //   align_state = FIND_CLOSEST_WALL;
     //   break;
-
-    case TURN:
-      BluetoothSerial.println("TURN ATTEMPT MADE");
-      break;
 
     case GO_HOME:
       BluetoothSerial.print("Waiting to go home");
