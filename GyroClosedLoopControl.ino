@@ -112,6 +112,8 @@ float ir_average;
 
 #define CONTROL_CONSTRAINT_IR 150
 
+Servo turret_motor;
+
 void setup(void)
 {
 
@@ -128,6 +130,9 @@ void setup(void)
     // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
     SerialCom = &Serial;
     SerialCom->begin(115200);
+
+    turret_motor.attach(8);
+    turret_motor.write(90);
 
     /*
     // Timer Set up
@@ -221,6 +226,10 @@ STATE execution()
     float e_distance, u_distance;
     float kp_distance = 20;
     float ki_distance = 0;
+
+    e_distance = sonar_cm - distance_aim;
+
+    u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
     
 
     switch(run_state)
@@ -228,15 +237,11 @@ STATE execution()
 
         case STRAIGHT:
 
-        e_distance = sonar_cm - distance_aim;
-
-        u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
-
         ClosedLoopStraight(u_distance);
 
         ki_distance_sonar += e_distance;
 
-        if ((!forward_backward && (sonar_cm < 20)) || (forward_backward && (sonar_cm > 140))) 
+        if ((!forward_backward && (sonar_cm < 20)) || (forward_backward && (sonar_cm > 170))) 
         {
             stop();
 
@@ -246,7 +251,10 @@ STATE execution()
             BluetoothSerial.println("Finished Straight");
             BluetoothSerial.println(" ");
             
-
+            ki_distance_sonar = 0;
+            turret_motor.write(0);
+            distance_aim = 20;
+            
             delay(1000);
             timeinitial = millis();
         }
@@ -257,7 +265,7 @@ STATE execution()
 
         case STRAFE:
 
-        ClosedLoopStaph(speed_val);
+        ClosedLoopStaph(u_distance);
 
         if ((millis() - timeinitial) > 1000)
         {
@@ -271,7 +279,8 @@ STATE execution()
             BluetoothSerial.println("Finished Strafe");
             BluetoothSerial.println(" ");
 
-            distance_aim = (forward_backward) ? 160 : 20;
+            turret_motor.write(90);
+            distance_aim = (forward_backward) ? 170 : 20;
             ki_distance_sonar = 0;
 
             delay(1000);
