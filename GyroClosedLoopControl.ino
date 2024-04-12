@@ -199,7 +199,13 @@ STATE execution()
 {
     STATE return_state = RUNNING;
 
-    delay(10);
+    delay(500);
+
+    ClosedLoopTurn(speed_val, 90);
+
+    delay(5000);
+
+    stop();
 
     return return_state;
 }
@@ -207,6 +213,8 @@ STATE execution()
 void ClosedLoopTurn(float speed, float angle_val)
 {
     float e, correction_val;
+    float kp_angle = 20;
+    float ki_angle = 10;
 
     e = angle_val - gyroAngle;
 
@@ -218,6 +226,25 @@ void ClosedLoopTurn(float speed, float angle_val)
     left_rear_motor.writeMicroseconds(1500 + correction_val);
     right_rear_motor.writeMicroseconds(1500 + correction_val);
     right_font_motor.writeMicroseconds(1500 + correction_val);
+
+
+    BluetoothSerial.print("current angle:  ");
+    BluetoothSerial.println(gyroAngle);
+    BluetoothSerial.print("e:            ");
+    BluetoothSerial.println(e);
+    BluetoothSerial.print("correction:   ");
+    BluetoothSerial.println(correction_val);
+    BluetoothSerial.print("ki:           ");
+    BluetoothSerial.println(ki_integral_angle);
+    BluetoothSerial.println(" ");
+}
+
+void stop() //Stop
+{
+  left_font_motor.writeMicroseconds(1500);
+  left_rear_motor.writeMicroseconds(1500);
+  right_rear_motor.writeMicroseconds(1500);
+  right_font_motor.writeMicroseconds(1500);
 }
 
 void ClosedLoopStaph(int speed_val)
@@ -335,12 +362,12 @@ void Gyro()
         gyroAngle += gyroAngleChange;
     }
 
-    BluetoothSerial.print("Anglew Change:      ");
-    BluetoothSerial.println(gyroAngleChange);
-    BluetoothSerial.print("Delta T Actual:     ");
-    BluetoothSerial.println(millis() - gyroTime);
-    BluetoothSerial.print("Delta T theretical: ");
-    BluetoothSerial.println(timer_compensation / timer_frequency);
+    // BluetoothSerial.print("Anglew Change:      ");
+    // BluetoothSerial.println(gyroAngleChange);
+    // BluetoothSerial.print("Delta T Actual:     ");
+    // BluetoothSerial.println(millis() - gyroTime);
+    // BluetoothSerial.print("Delta T theretical: ");
+    // BluetoothSerial.println(timer_compensation / timer_frequency);
 
     gyroTime = millis();
 

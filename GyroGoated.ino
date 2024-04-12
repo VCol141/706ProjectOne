@@ -246,75 +246,87 @@ STATE initialising() {
 }
 
 STATE homing(){
-  //Check if battery voltage is ok before proceeding
-  #ifndef NO_BATTERY_V_OK
-      if (!is_battery_voltage_OK()) return STOPPED;
-  #endif
+  // //Check if battery voltage is ok before proceeding
+  // #ifndef NO_BATTERY_V_OK
+  //     if (!is_battery_voltage_OK()) return STOPPED;
+  // #endif
 
-  switch (home_state){
-    case ROTATE: //Take initial average and  start turning in arbituary direction
-      wall = measure_sonar();
-      cw();
-      home_state = APPROACHING_WALL;
-      break;
-    case APPROACHING_WALL: //Detect when the robot is approaching a wall
-      sonar_value = measure_sonar();
-      if (sonar_value <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
-        home_state = FIND_WALL;
-      }
-      else if(wall > sonar_value){ //New maxmum detected, save this value
-        wall = sonar_value;
-      }
-      break;
-    case FIND_WALL: //Look for local min point
-      sonar_value = measure_sonar();
-      if (wall < sonar_value){ //New minimum found, log angle and min distance
-        gyro_aim = gyroAngle;
-        wall = sonar_value;
-      }
-      else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
-        stop();
-        delay(1000); //allow motors to power off before completely switching the direction
-        home_state = FACE_WALL;
-      }
-      break;
-    case FACE_WALL:
-      ClosedLoopTurn(100, gyro_aim);
-      if (abs(gyro_aim-gyroAngle) >= 1){
-        wall_settled++;
-        if (wall_settled == 10){
-          stop();
-          delay(2000);
-          BluetoothSerial.println("TURNING STOPPED");
-          gyroAngle = 0;
-          home_state = FIND_ORIENTATION;
-        }
-      else{
-        wall_settled = 0;
-      } 
-      }
-      break;
-    case FIND_ORIENTATION:
-      //turn the ultrasonic and get the distance on either side of the robot
-      if(find_orientation_distance() < BOARD_WIDTH)
-      {                   
-        BluetoothSerial.println("Correct Orientation :DDDDDD");
-        home_state = GO_HOME;
-      }
-      else
-      {
-        BluetoothSerial.println("Incorrect Orientation :((((((");
-        home_state = ALIGN_ROBOT;
-      }
+  // switch (home_state){
+  //   case ROTATE: //Take initial average and  start turning in arbituary direction
+  //     wall = measure_sonar();
+  //     cw();
+  //     home_state = APPROACHING_WALL;
+  //     break;
+  //   case APPROACHING_WALL: //Detect when the robot is approaching a wall
+  //     sonar_value = measure_sonar();
+  //     if (sonar_value <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
+  //       home_state = FIND_WALL;
+  //     }
+  //     else if(wall > sonar_value){ //New maxmum detected, save this value
+  //       wall = sonar_value;
+  //     }
+  //     break;
+  //   case FIND_WALL: //Look for local min point
+  //     sonar_value = measure_sonar();
+  //     if (wall < sonar_value){ //New minimum found, log angle and min distance
+  //       gyro_aim = gyroAngle;
+  //       wall = sonar_value;
+  //     }
+  //     else if(sonar_value >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
+  //       stop();
+  //       delay(1000); //allow motors to power off before completely switching the direction
+  //       home_state = FACE_WALL;
+  //     }
+  //     break;
+  //   case FACE_WALL:
+  //     ClosedLoopTurn(100, gyro_aim);
+  //     if (abs(gyro_aim-gyroAngle) >= 1){
+  //       wall_settled++;
+  //       if (wall_settled == 10){
+  //         stop();
+  //         delay(2000);
+  //         BluetoothSerial.println("TURNING STOPPED");
+  //         gyroAngle = 0;
+  //         home_state = FIND_ORIENTATION;
+  //       }
+  //     else{
+  //       wall_settled = 0;
+  //     } 
+  //     }
+  //     break;
+  //   case FIND_ORIENTATION:
+  //     //turn the ultrasonic and get the distance on either side of the robot
+  //     if(find_orientation_distance() < BOARD_WIDTH)
+  //     {                   
+  //       BluetoothSerial.println("Correct Orientation :DDDDDD");
+  //       home_state = GO_HOME;
+  //     }
+  //     else
+  //     {
+  //       BluetoothSerial.println("Incorrect Orientation :((((((");
+  //       home_state = ALIGN_ROBOT;
+  //     }
 
-      break;
-    case ALIGN_ROBOT:
-      if(align_robot() == true){
-        return RUNNING;
-      }
-      break;
-  }
-  return HOMING;
+  //     break;
+  //   case ALIGN_ROBOT:
+  //     if(align_robot() == true){
+  //       return RUNNING;
+  //     }
+  //     break;
+  // }
+
+  STATE return_state = RUNNING;
+
+    delay(500);
+
+    ClosedLoopTurn(speed_val, 90);
+
+    delay(5000);
+
+    stop();
+
+  return return_state;
+  //return HOMING;
 }
 
 STATE running() {
@@ -635,25 +647,25 @@ bool align_robot(){
   return 0;
 }
 
-int find_orientation_distance(){
-  float right_cm, left_cm;
+// int find_orientation_distance(){
+//   float right_cm, left_cm;
 
-  turret_motor.writeMicroseconds(2000);     //go full CW
-  delay(1000);                              //wait for servo to get to position
+//   turret_motor.writeMicroseconds(2000);     //go full CW
+//   delay(1000);                              //wait for servo to get to position
 
-  HC_SR04_range();              
-  right_cm = sonar_average;                 //get distance of right side
+//   HC_SR04_range();              
+//   right_cm = sonar_average;                 //get distance of right side
 
-  turret_motor.writeMicroseconds(1000);     //go full CCW
-  delay(1000);                                                                               //TUNE ME
+//   turret_motor.writeMicroseconds(1000);     //go full CCW
+//   delay(1000);                                                                               //TUNE ME
 
-  HC_SR04_range();
-  left_cm = sonar_average;
+//   HC_SR04_range();
+//   left_cm = sonar_average;
 
-  turret_motor.writeMicroseconds(1500);     //go back to normal orientation
+//   turret_motor.writeMicroseconds(1500);     //go back to normal orientation
 
-  return (int)(right_cm + left_cm);
-}
+//   return (int)(right_cm + left_cm);
+// }
 
 double read_IR(double coefficient, double power, double sensor_reading){
   double sensor_mm;
@@ -834,24 +846,6 @@ void ClosedLoopStrafe(int speed_val)
     BluetoothSerial.println(sonar_dist);
     BluetoothSerial.print("Aimed reading:         ");
     BluetoothSerial.println(sonar_dist);
-}
-
-void ClosedLoopTurn(float speed, float angle_val)
-{
-    float e, correction_val;
-    float kp_angle = 0;
-    float ki_angle = 0;
-
-    e = angle_val - gyroAngle;
-
-    correction_val = constrain(kp_angle * e + ki_angle * ki_integral_turn, -speed, speed);
-
-    ki_integral_turn += e;
-
-    left_font_motor.writeMicroseconds(1500 + correction_val);
-    left_rear_motor.writeMicroseconds(1500 + correction_val);
-    right_rear_motor.writeMicroseconds(1500 + correction_val);
-    right_font_motor.writeMicroseconds(1500 + correction_val);
 }
 
 // double KalmanGyro(double rawdata){   // Kalman Filter
