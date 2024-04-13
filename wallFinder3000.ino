@@ -18,9 +18,8 @@
 #define OUTPUTBLUETOOTHMONITOR 1
 
 // Board measurements
-#define BOARD_WIDTH 150
-#define BOARD_LENGTH 1990
-#define WALL_LIMIT_DISTANCE 150
+#define BOARD_LENGTH 199
+#define BOARD_WIDTH 122
 
 //Serial Set-up
 HardwareSerial *SerialCom;
@@ -212,6 +211,9 @@ static int MIN_SIDE_DIST = 20;
 // Sonar
 int sonar_MA_n = 30;
 float sonar_values[30];
+
+/*******************Mapping Var*****************/
+bool array[ROWS][COLS] = { {false} }; // Initialize all elements to 0
 
 /*******************MAIN SET-UP**********************/
 void setup(void)
