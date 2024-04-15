@@ -781,7 +781,7 @@ double SonarCheck(double angle_in)
         delay(50);
     }
     (value_count > 0 ? sonar_cm = sonar_sum/value_count : sonar_cm = sonar_cm);
-
+    //comment
     BluetoothSerial.println("");
     BluetoothSerial.println("SONAR CHECK END");
     
