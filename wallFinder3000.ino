@@ -149,7 +149,7 @@ double sonar_baseline=100;
 
 //Sonar Kalman
 double sensor_noise_sonar = 8;
-double process_noise_sonar = 1.5;
+double process_noise_sonar = 1;
 double sonar_variance = 0;
 
 
@@ -387,9 +387,9 @@ STATE homing(){
       }
       break;
     case FIND_WALL: //Look for local min point
-      if (wall > sonar_cm ){ //New minimum found, log angle and min distance //&& abs(sonar_cm-cm) < 3
+      if (wall > cm && abs(sonar_cm-cm) < 5){ //New minimum found, log angle and min distance //
         gyro_aim = gyroAngle;
-        wall = sonar_cm;
+        wall = cm;
         BluetoothSerial.print("CURRENT ANGLE: ");
         BluetoothSerial.println(gyroAngle);
       }
@@ -398,7 +398,7 @@ STATE homing(){
         delay(1000); //allow motors to power off before completely switching the direction
         BluetoothSerial.print("STOPPED ANGLE ");
         BluetoothSerial.println(gyroAngle);
-        gyro_aim = gyroAngle - gyro_aim-10;
+        gyro_aim = gyroAngle - gyro_aim - 10;
         gyroAngle = 0;
         BluetoothSerial.println("trying to face wall");
         BluetoothSerial.print("AIMING FOR ANGLE: ");
@@ -410,7 +410,7 @@ STATE homing(){
       BluetoothSerial.print("CURRENT ANGLE: ");
       BluetoothSerial.println(gyroAngle);
       double sonar_error;
-      sonar_error = ClosedLoopTurn(200, gyro_aim); 
+      sonar_error = ClosedLoopTurn(200, -gyro_aim); 
       if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
@@ -482,11 +482,20 @@ STATE align()
               align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
               BluetoothSerial.println("GOING HOME");
               gyroAngle = 0;      //make sonar straight again
+              gyroAngleChange = 0;
             }
           } 
         }
         else{
+          stop();
           align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
+
+          delay(500);
+
+          gyroAngle = 0;
+          gyroAngleChange = 0;
+          ki_straight_gyro = 0;
+
           BluetoothSerial.println("GOING HOME");
         }
         
@@ -504,11 +513,13 @@ STATE align()
 
       ClosedLoopStraight(u_distance);
 
-      if (average_ir <= 140) 
+
+      if (abs(e_distance) <= 5) 
       {
         stop();
         delay(1000);
         align_state = GO_HOME_STRAFE;
+        ki_straight_gyro = 0;
         SonarCheck(0);
 
       }
@@ -528,6 +539,7 @@ STATE align()
         stop();
         delay(1000);
         align_state = GO_HOME_STRAFE;
+        ki_straight_gyro = 0;
         
         return RUNNING;
       }
