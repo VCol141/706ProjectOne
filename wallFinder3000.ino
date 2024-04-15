@@ -321,6 +321,7 @@ STATE initialising() {
   
   //COMMENT OUT LATER
   // sonar_baseline = SonarCheck(0);
+  ResetIntegral();
 
   return HOMING;
 }
@@ -364,6 +365,7 @@ STATE homing(){
         BluetoothSerial.print("AIMING FOR ANGLE: ");
         BluetoothSerial.println(gyro_aim);
         home_state = FACE_WALL;
+        ResetIntegral();
       }
       break;
     case FACE_WALL:
@@ -380,6 +382,7 @@ STATE homing(){
           BluetoothSerial.println("TURNING STOPPED");
           gyroAngle = 0;
 
+          ResetIntegral();
           return ALIGNING;
         }
       }
@@ -388,7 +391,20 @@ STATE homing(){
       }
       break;
   }
+
   return HOMING;
+}
+
+void ResetIntegral()
+{
+  ki_distance_sonar = 0;
+  ki_integral_angle = 0;
+  ki_integral_gyro = 0;
+  ki_integral_sonar = 0;
+  ki_strafe_gyro = 0;
+  ki_strafe_ir = 0;
+  ki_straight_gyro = 0;
+  ki_turn_gyro = 0;
 }
 
 /*******************ALIGNING*********************/
@@ -440,6 +456,7 @@ STATE align()
               BluetoothSerial.println("TURNING STOPPED");
               //turn the turret motor back to its closest direction
               align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
+              ResetIntegral();
               distance_aim = 140;
               BluetoothSerial.println("GOING HOME");
               gyroAngle = 0;      //make sonar straight again
@@ -449,6 +466,7 @@ STATE align()
         else{
           align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
           distance_aim = 140;
+          ResetIntegral();
           BluetoothSerial.println("GOING HOME");
         }
         
@@ -471,6 +489,7 @@ STATE align()
         stop();
         delay(1000);
         align_state = GO_HOME_STRAFE;
+        ResetIntegral();
         SonarCheck(0);
 
       }
@@ -490,7 +509,7 @@ STATE align()
         stop();
         delay(1000);
         align_state = GO_HOME_STRAFE;
-        
+        ResetIntegral();
         return RUNNING;
       }
       break;
@@ -552,12 +571,11 @@ STATE running() {
            SonarCheck(0);
 
            sonar_baseline = sonar_baseline - STRAFE_DISTANCE;
-
-           ki_distance_sonar = 0;
-
+           
            (sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
 
            (sonar_baseline < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+           ResetIntegral();
       }
       break;
 
@@ -589,7 +607,7 @@ STATE running() {
           SonarCheck(90);
 
           distance_aim = 140;
-          ki_distance_sonar = 0;
+          ResetIntegral();
 
           forward_backward = !forward_backward;
           }
