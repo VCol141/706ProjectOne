@@ -102,7 +102,7 @@ Servo left_rear_motor;  // create servo object to control Vex Motor Controller 2
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
 
-int speed_val = 300;
+int speed_val = 400;
 int speed_change;
 
 
@@ -533,7 +533,7 @@ STATE running() {
   static RUN run_state = STRAIGHT;
 
   double e_distance, u_distance;
-  double kp_distance = 1;
+  double kp_distance;
   double ki_distance = 0;
   double average_ir = 0;
 
@@ -544,7 +544,9 @@ STATE running() {
 
   switch(run_state){ 
     case STRAIGHT:
-      distance_aim = 140;
+
+      kp_distance = (forward_backward) ? 1 : 0.03;
+      distance_aim = (forward_backward) ? 150 : 190;
 
       average_ir = (forward_backward) ? average_IR(LR1mm, LR3mm) : average_IR(MR1mm, MR2mm);
 
@@ -554,16 +556,25 @@ STATE running() {
 
       ClosedLoopStraight(u_distance);
 
-       if (average_ir <= distance_aim) 
+      BluetoothSerial.print("average_ir: ");
+      BluetoothSerial.println(average_ir);
+      BluetoothSerial.print("u_distance: ");
+      BluetoothSerial.println(u_distance);
+      BluetoothSerial.print("e_distance: ");
+      BluetoothSerial.println(e_distance);
+      BluetoothSerial.println(" ");
+
+       if ((average_ir < distance_aim + 20)) 
        {
            stop();
 
            delay(500);
 
+           BluetoothSerial.println(" !!!!STRAFE!!!! ");
+
            sonar_baseline = sonar_baseline - STRAFE_DISTANCE;
 
            ki_distance_sonar = 0;
-           ki_straight_gyro = 0;
 
            //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
 
@@ -589,13 +600,12 @@ STATE running() {
         ClosedLoopStrafe(u_distance);
         
 
-        if (sonar_cm <= (sonar_baseline + DISTANCE_OFFSET)){
+        if (abs(e_distance) < 20){
           stop();
 
           run_state = STRAIGHT;
 
           ki_distance_sonar = 0;
-          ki_straight_gyro = 0;
 
           forward_backward = !forward_backward;
         }
@@ -606,6 +616,7 @@ STATE running() {
         return_state = STOPPED;
         break;
     };
+
 
   ki_distance_sonar += e_distance;
   return return_state;
@@ -961,15 +972,15 @@ void ClosedLoopStraight(int speed_val)
 
     double correction_val_1 = kp_gyro * e + ki_gyro * ki_straight_gyro;
 
-    correction_val = constrain(correction_val_1, -300, 300);
+    correction_val = constrain(correction_val_1, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
     ki_straight_gyro += e;
 
-    BluetoothSerial.print("Gyro power:         ");
-    BluetoothSerial.println(correction_val_1);
-    BluetoothSerial.print("Gyro Angle Change: ");
-    BluetoothSerial.println(e);
-    BluetoothSerial.println("");
+    // BluetoothSerial.print("Gyro power:         ");
+    // BluetoothSerial.println(correction_val_1);
+    // BluetoothSerial.print("Gyro Angle Change: ");
+    // BluetoothSerial.println(e);
+    // BluetoothSerial.println("");
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
@@ -990,9 +1001,9 @@ void ClosedLoopStrafe(int speed_val)
 
     (abs(gyroAngleChange) < 3) ? e_gyro = gyroAngleChange : e_gyro = 0;
 
-    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_strafe_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
+    correction_val_gyro = constrain(kp_gyro * e_gyro + ki_gyro * ki_straight_gyro, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
     
-    ki_strafe_gyro += e_gyro;
+    ki_straight_gyro += e_gyro;
 
     //e_ir = analogRead((forward_backward) ? MR_B : MR_F) - ir_average;
 
