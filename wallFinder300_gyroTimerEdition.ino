@@ -127,8 +127,6 @@ double MR1arr[20], MR2arr[20], LR1arr[20], LR3arr[20];
 
 //Kalman variables
 double MR1var, MR2var, LR1var, LR3var;
-double sensor_noise = 1;
-double process_noise = 10;
 
 
 /***ULTRASONIC***/
@@ -137,7 +135,7 @@ const int ECHO_PIN = 49;
 const unsigned int MAX_DIST = 23200;
 
 double ultraArray[20];
-double sonar_threshold = 4;
+double sonar_threshold = 1;
 int wall_settled = 0;
 double wall = 0;
 
@@ -145,13 +143,13 @@ double wall = 0;
 double sonar_cm = 0;
 double straight_time = 0;
 double ki_integral_sonar = 0;
-double sonar_dist = 0;
+double cm = 0;
 double ki_integral_angle = 0;
 double sonar_baseline=100;
 
 //Sonar Kalman
-double process_noise_sonar = 10;
-double sensor_noise_sonar = 10;
+double sensor_noise_sonar = 8;
+double process_noise_sonar = 1.5;
 double sonar_variance = 0;
 
 
@@ -164,7 +162,7 @@ int gyroPin = A2;
 int gyroVal = 0;
 
 double gyro_error = 0;
-double gyroZeroVoltage = 0;
+double gyroZeroVoltage = 500;
 double gyroRate = 0;
 double gyroAngleChange = 0;
 double gyroAngle = 0;
@@ -182,7 +180,7 @@ double prev_val_gyro = 0;
 double last_var_gyro = 999;
 
 double sensor_noise_gyro = 8;
-double process_noise_gyro = 1.5;
+double process_noise_gyro = 1;
 
 /***SERVO***/
 Servo turret_motor;
@@ -221,17 +219,17 @@ double sonar_values[30];
 
 // Timer values
 #define TIMER_FREQUENCY 500
-#define TIMER_COMPENSATION_VAL 5
+#define TIMER_COMPENSATION_VAL 10
 
 int timer_frequency = 500;
-int timer_compensation = 5;
+int timer_compensation = 10;
+double run_sequence = millis();
 
 int timerCount = 0;
 
 /*******************MAIN SET-UP**********************/
 void setup(void)
 {
-  cli();
 
   BluetoothSerial.begin(115200);
   BluetoothSerial.println("");
@@ -266,57 +264,68 @@ void setup(void)
   path_state = FORWARD;
   last_path_state = FORWARD;
 
-  // Timer Set up
-  TCCR2A = 0;// set entire TCCR2A register to 0
-  TCCR2B = 0;// same for TCCR2B
-  TCNT2  = 0;//initialize counter value to 0
+  // // Timer Set up
+  // TCCR2A = 0;// set entire TCCR2A register to 0
+  // TCCR2B = 0;// same for TCCR2B
+  // TCNT2  = 0;//initialize counter value to 0
     
-  // Set timer compare value
-  OCR2A = (16*10^6) / (timer_frequency * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
-  // turn on CTC mode
-  TCCR2A |= (1 << WGM21);
-  // Set CS21 bit for 256 prescaler
-  TCCR2B |= (1 << CS22) | (1 << CS21);   
-  // enable timer compare interrupt
-  TIMSK2 |= (1 << OCIE2A);
+  // // Set timer compare value
+  // OCR2A = (16*10^6) / (timer_frequency * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
+  // // turn on CTC mode
+  // TCCR2A |= (1 << WGM21);
+  // // Set CS21 bit for 256 prescaler
+  // TCCR2B |= (1 << CS22) | (1 << CS21);   
+  // // enable timer compare interrupt
+  // TIMSK2 |= (1 << OCIE2A);
 
   delay(1000); //settling time but noT really needed
 }
 
-ISR(TIMER2_COMPA_vect)
-{
-    timerCount++;
-
-    if (timerCount == timer_compensation) 
-    {
-      Gyro();
-      Sonar();
-    }
-}
+// ISR(TIMER2_COMPA_vect)
+// {
+//     timerCount++;
+//     if (timerCount == timer_compensation) 
+//     {
+//       // TIMSK2 |= (0 << OCIE2A);
+//       BluetoothSerial.println("INTERRUPT TRIGGERED");
+//       // Gyro();
+//       run_sequence = 1;
+//       timerCount = 0;
+//       // TIMSK2 |= (1 << OCIE2A);
+//     }
+// }
 
 /*******************SUPER LOOP**********************/
 void loop(void) //main loop
 {
-  static STATE machine_state = INITIALISING;
-  //Finite-state machine Code
-  switch (machine_state) {
-    case INITIALISING:
-      machine_state = initialising();
-      break;
-    case HOMING:
-      machine_state = homing();
-      break;
-    case ALIGNING:
-      machine_state = align();
-      break;
-    case RUNNING: //Lipo Battery Volage OK
-      machine_state =  running();
-      break;
-    case STOPPED: //Stop of Lipo Battery voltage is too low, to protect Battery
-      machine_state = stopped();
-      break;
-  };
-  delay(10);
+  
+    static STATE machine_state = INITIALISING;
+    // if (millis() - run_sequence >= 50 && machine_state != INITIALISING){
+    //   run_sequence = millis();
+    //   Gyro();
+    //   }
+    //Finite-state machine Code
+    switch (machine_state) {
+      case INITIALISING:
+        machine_state = initialising();
+        break;
+      case HOMING:
+        machine_state = homing();
+        break;
+      case ALIGNING:
+        machine_state = align();
+        break;
+      case RUNNING: //Lipo Battery Volage OK
+        machine_state =  running();
+        break;
+      case STOPPED: //Stop of Lipo Battery voltage is too low, to protect Battery
+        machine_state = stopped();
+        break;
+    };
+    Sonar();
+    Gyro();
+    delay(10);
+  // }
 }
 
 /*******************INITIALISING**********************/
@@ -339,23 +348,16 @@ STATE initialising() {
 
   // for(int i = 0; i < 20; i++){
   //   gyroVal = analogRead(gyroPin);
-  //   gyroRate = (gyroVal * 5.00) / 1023;
+  //   gyroRate = (gyroVal * 5.00) / 1023
   //   // find the voltage offset the value of voltage when gyro is zero (still)
   //   gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
   //   gyro_array[i] = (gyroRate / 0.007);
   // }
   // gyro_average = average_array(gyro_array, 0, 20);
 
-  BluetoothSerial.print("GYRO 0 VOLTAGE:");
-  BluetoothSerial.println(gyroZeroVoltage);
-
   intialise_sensors();
   SonarCheck(90);
   
-  //COMMENT OUT LATER
-  // sonar_baseline = SonarCheck(0);
-
-  sei();
   return HOMING;
 }
 
@@ -385,14 +387,18 @@ STATE homing(){
       }
       break;
     case FIND_WALL: //Look for local min point
-      if (wall > sonar_cm){ //New minimum found, log angle and min distance
+      if (wall > cm && abs(sonar_cm-cm) <3){ //New minimum found, log angle and min distance //
         gyro_aim = gyroAngle;
-        wall = sonar_cm;
+        wall = cm;
+        BluetoothSerial.print("CURRENT ANGLE: ");
+        BluetoothSerial.println(gyroAngle);
       }
       else if(sonar_cm >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
         stop();
         delay(1000); //allow motors to power off before completely switching the direction
-        gyro_aim = gyroAngle - gyro_aim;
+        BluetoothSerial.print("STOPPED ANGLE ");
+        BluetoothSerial.println(gyroAngle);
+        gyro_aim = gyro_aim- gyroAngle;
         gyroAngle = 0;
         BluetoothSerial.println("trying to face wall");
         BluetoothSerial.print("AIMING FOR ANGLE: ");
@@ -404,7 +410,7 @@ STATE homing(){
       BluetoothSerial.print("CURRENT ANGLE: ");
       BluetoothSerial.println(gyroAngle);
       double sonar_error;
-      sonar_error = ClosedLoopTurn(200, (-gyro_aim)); //Aim about 8 degrees back from the actual measured angle
+      sonar_error = ClosedLoopTurn(200, gyro_aim); 
       if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
@@ -677,9 +683,8 @@ STATE stopped() {
 /*******************READ SONAR FUNCTION**********************/
 void Sonar()
 {
-    unsigned long t1, t2, pulse_width;
-    double cm;
-     
+    unsigned long t1, t2, pulse_width; 
+    
     // Hold the trigger pin high for at least 10 us
     digitalWrite(TRIG_PIN, HIGH);
     delayMicroseconds(10);
@@ -687,11 +692,11 @@ void Sonar()
 
     // Wait for pulse on echo pin
     t1 = micros();
-    while ( digitalRead(ECHO_PIN) == 0 ) {
+    while (digitalRead(ECHO_PIN) == 0 ) {
         t2 = micros();
         pulse_width = t2 - t1;
-        if ( pulse_width > (MAX_DIST + 1000)) {
-            SerialCom->println("HC-SR04: NOT found");
+        if (pulse_width > (MAX_DIST + 1000)) {
+            // BluetoothSerial.println("HC-SR04: NOT found");
             return;
         }
     }
@@ -699,17 +704,18 @@ void Sonar()
     // Measure how long the echo pin was held high (pulse width)
     // Note: the micros() counter will overflow after ~70 min
     t1 = micros();
-    while ( digitalRead(ECHO_PIN) == 1)
+    while (digitalRead(ECHO_PIN) == 1)
     {
         t2 = micros();
         pulse_width = t2 - t1;
         if ( pulse_width > (MAX_DIST + 1000) ) {
-            SerialCom->println("HC-SR04: Out of range");
+            // BluetoothSerial.println("HC-SR04: Out of range");
             return;
         }
     }
 
     t2 = micros();
+
     pulse_width = t2 - t1;
 
     // Calculate distance in centimeters and inches. The constants
@@ -719,6 +725,7 @@ void Sonar()
 
     
     (sonar_cm == 0 ? sonar_cm = cm : sonar_cm = KalmanSonar(cm));
+
     BluetoothSerial.print("Raw Sonar Reading");
     BluetoothSerial.println(cm);
     BluetoothSerial.print("Last sonar reading");
@@ -729,22 +736,17 @@ void Sonar()
 
 
 double KalmanSonar(double rawdata){   // Kalman Filter
-  // if (rawdata > 50 + sonar_cm || rawdata < sonar_cm - 50){ //If the value is absolutely outrageous, ignore it and use the last recorded value || 
-  //   return sonar_cm;
-  // }
-  // else{
-    rawdata = constrain(rawdata, sonar_cm - 10, sonar_cm + 10);
+
     double a_post_est, a_priori_var, a_post_var, kalman_gain;
 
+    rawdata = constrain(rawdata, sonar_cm-10, sonar_cm + 10);
     a_priori_var = sonar_variance + process_noise_sonar; 
 
     kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
     a_post_est = sonar_cm + kalman_gain*(rawdata-sonar_cm);
     sonar_variance = (1 * kalman_gain)*a_priori_var;
     sonar_cm = rawdata;
-    //BluetoothSerial.println("Kalman");
     return a_post_est;
-  // }   
 }
 
 double SonarCheck(double angle_in)
@@ -767,6 +769,7 @@ double SonarCheck(double angle_in)
     }
     sonar_cm = average_array(ultraArray, 0, 20);
     return (sonar_cm);
+
 }
 
 
@@ -781,15 +784,12 @@ int iterations = 20;
     MR2arr[i] = MR2mm_reading;
     LR1arr[i] = LR1mm_reading;
     LR3arr[i] = LR3mm_reading;
-    Sonar();
-    ultraArray[i] = sonar_cm;
     delay(5);
   }
   MR1mm = average_array(MR1arr, 0, 20);
   MR2mm = average_array(MR2arr, 0, 20);
   LR1mm = average_array(LR1arr, 0, 20);
   LR3mm = average_array(LR3arr, 0, 20);
-  sonar_cm = average_array(ultraArray, 0, 20);
 
   //If using Kalman to filter, Set IR variance to 0
   // MR1var = 0;
@@ -865,6 +865,7 @@ double average_IR(double IR1, double IR2) {
 void Gyro()
 {
     // convert the 0-1023 signal to 0-5v
+    // BluetoothSerial.println("started gyro");
     double gyro_reading = (analogRead(gyroPin));
 
     gyroRate = (gyro_reading * 5.00) / 1023;
@@ -872,22 +873,11 @@ void Gyro()
     // find the voltage offset the value of voltage when gyro is zero (still)
     gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
 
-
     // read out voltage divided the gyro sensitivity to calculate the angular velocity
-    double angularVelocity = (gyroRate / 0.007)+0.1; // from Data Sheet, gyroSensitivity is 0.007 V/dps
+    double angularVelocity = (gyroRate / 0.007); // from Data Sheet, gyroSensitivity is 0.007 V/dps
 
     gyro_average = (1 ? angularVelocity : KalmanGyro(angularVelocity));
     // average_gyro(angularVelocity);
-
-    BluetoothSerial.print("pin value");
-    BluetoothSerial.println(analogRead(gyroPin));
-    BluetoothSerial.print("Average ANGULAR VELOCITY");
-    BluetoothSerial.println(gyro_average);
-    
-    BluetoothSerial.print("GYRO RATE");
-    BluetoothSerial.println(gyroRate);
-    BluetoothSerial.print("Angular Velocity");
-    BluetoothSerial.println(angularVelocity);
 
     // if the angular velocity is less than the threshold, ignore it
     if (gyro_average >= 2 || gyro_average <= -2)
@@ -895,20 +885,16 @@ void Gyro()
         gyroAngleChange = millis()-gyroTime;
         gyroAngleChange = 1000 / gyroAngleChange;
         gyroAngleChange = gyro_average/ gyroAngleChange;
-        // BluetoothSerial.print("Angle change");
-        // BluetoothSerial.println(gyroAngleChange);
-        gyroAngle += gyroAngleChange;
+        gyroAngle += gyroAngleChange;   
     }
 
-    // BluetoothSerial.print(" Delta T: ");
-    // BluetoothSerial.println(millis() - gyroTime);
-
-    // BluetoothSerial.println("");
     gyroTime = millis();
 
-    timerCount = 0;
-
-
+    // BluetoothSerial.print("Average ANGULAR VELOCITY");
+    // BluetoothSerial.println(gyro_average);
+    // BluetoothSerial.print("Gyro Angle:");
+    // BluetoothSerial.println(gyroAngle);
+    // BluetoothSerial.println("");
 }
 
 double average_gyro(double rawdata){
@@ -924,12 +910,6 @@ double average_gyro(double rawdata){
 }
 
 double KalmanGyro(double rawdata){   // Kalman Filter
-  if (0 && (abs(rawdata) > 3 + abs(prev_val_gyro)) && (abs(prev_val_gyro)<2)){ //If the value is absolutely outrageous, ignore it and use the last recorded value 
-  //||(rawdata > 20 + prev_val_gyro || rawdata < prev_val_gyro - 20)&&(abs(prev_val_gyro)>2)
-    return prev_val_gyro;
-  }
-  else{
-
   double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
 
   a_priori_var = last_var_gyro + process_noise_gyro; 
@@ -940,18 +920,17 @@ double KalmanGyro(double rawdata){   // Kalman Filter
   last_var_gyro = a_post_var;
   prev_val_gyro = a_post_est;
   return a_post_est;
-  }
 }
 
 
 /*******************CLOSED LOOP FUNCTIONS**********************/
-double ClosedLoopTurn(double speed, double gyro_aim)
+double ClosedLoopTurn(double speed, double target_angle)
 {
   double e, correction_val;
   double kp_angle = 6;
   double ki_angle = 0;
 
-  e = gyro_aim - gyroAngle;
+  e = target_angle- gyroAngle;
 
   correction_val = constrain(kp_angle * e + ki_angle * ki_integral_angle, -speed, speed);
 
@@ -965,7 +944,7 @@ double ClosedLoopTurn(double speed, double gyro_aim)
   BluetoothSerial.print("Current Error: ");
   BluetoothSerial.println(e);
   BluetoothSerial.print("Gyro aim: ");
-  BluetoothSerial.println(gyro_aim);
+  BluetoothSerial.println(target_angle);
   // BluetoothSerial.print("Gyro angle:  ");
   // BluetoothSerial.println(gyroAngle);
   // BluetoothSerial.print("correction:   ");
@@ -1056,7 +1035,7 @@ void align_against_wall(){
   }else{
       BluetoothSerial.print("Fixing angle...");
       double sonar_error;
-      sonar_error = ClosedLoopTurn(130, IR_angle_error); //Aim about 8 degrees back from the actual measured angle
+      sonar_error = ClosedLoopTurn(200, IR_angle_error); 
       if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
