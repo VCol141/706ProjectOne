@@ -18,8 +18,9 @@
 #define OUTPUTBLUETOOTHMONITOR 1
 
 // Board measurements
-#define BOARD_LENGTH 199
-#define BOARD_WIDTH 122
+#define BOARD_WIDTH 150
+#define BOARD_LENGTH 1990
+#define WALL_LIMIT_DISTANCE 150
 
 //Serial Set-up
 HardwareSerial *SerialCom;
@@ -134,7 +135,7 @@ const int ECHO_PIN = 49;
 const unsigned int MAX_DIST = 23200;
 
 double ultraArray[20];
-double sonar_threshold = 2;
+double sonar_threshold = 1;
 int wall_settled = 0;
 double wall = 0;
 
@@ -147,8 +148,8 @@ double ki_integral_angle = 0;
 double sonar_baseline=100;
 
 //Sonar Kalman
-double sensor_noise_sonar = 10;
-double process_noise_sonar = 1;
+double sensor_noise_sonar = 8;
+double process_noise_sonar = 1.5;
 double sonar_variance = 0;
 
 
@@ -357,7 +358,7 @@ STATE initialising() {
   intialise_sensors();
   SonarCheck(90);
   
-  return RUNNING;
+  return HOMING;
 }
 
 /*******************HOMING**********************/
@@ -386,18 +387,18 @@ STATE homing(){
       }
       break;
     case FIND_WALL: //Look for local min point
-      if (wall > cm && abs(sonar_cm-cm) < 10){ //New minimum found, log angle and min distance //
+      if (wall > cm && abs(sonar_cm-cm) <3){ //New minimum found, log angle and min distance //
         gyro_aim = gyroAngle;
         wall = cm;
         BluetoothSerial.print("CURRENT ANGLE: ");
         BluetoothSerial.println(gyroAngle);
       }
-      else if(sonar_cm >= wall+sonar_threshold ){ //Minimum surpassed, turn towards given location
+      else if(sonar_cm >= wall+sonar_threshold){ //Minimum surpassed, turn towards given location
         stop();
         delay(1000); //allow motors to power off before completely switching the direction
         BluetoothSerial.print("STOPPED ANGLE ");
         BluetoothSerial.println(gyroAngle);
-        gyro_aim = gyroAngle - gyro_aim;
+        gyro_aim = gyro_aim- gyroAngle;
         gyroAngle = 0;
         BluetoothSerial.println("trying to face wall");
         BluetoothSerial.print("AIMING FOR ANGLE: ");
@@ -409,7 +410,7 @@ STATE homing(){
       BluetoothSerial.print("CURRENT ANGLE: ");
       BluetoothSerial.println(gyroAngle);
       double sonar_error;
-      sonar_error = ClosedLoopTurn(200, -gyro_aim); 
+      sonar_error = ClosedLoopTurn(200, gyro_aim); 
       if (abs(sonar_error) <= 5){
         wall_settled++;
         if (wall_settled == 10){
@@ -479,7 +480,6 @@ STATE align()
               BluetoothSerial.println("TURNING STOPPED");
               //turn the turret motor back to its closest direction
               align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
-              distance_aim = 140;
               BluetoothSerial.println("GOING HOME");
               gyroAngle = 0;      //make sonar straight again
             }
@@ -487,29 +487,28 @@ STATE align()
         }
         else{
           align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
-          distance_aim = 140;
           BluetoothSerial.println("GOING HOME");
         }
         
       }
       break;
 
-
-        case GO_HOME_STRAIGHT:
+    case GO_HOME_STRAIGHT:
       BluetoothSerial.print("Waiting to go home");
       kp_distance = 1;
       ki_distance = 0;
 
+      distance_aim = 140;
       e_distance = -(average_IR(LR1mm, LR3mm) - distance_aim);
-
       u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
       ClosedLoopStraight(u_distance);
 
-      if (average_IR(LR1mm, LR3mm) <= 140) 
+      if (sonar_cm >= MAX_DISTANCE + DISTANCE_OFFSET) 
       {
-        stop();
+        ClosedLoopStraight(u_distance);
         delay(1000);
+        stop();
         align_state = GO_HOME_STRAFE;
         SonarCheck(0);
 
@@ -530,7 +529,6 @@ STATE align()
         stop();
         delay(1000);
         align_state = GO_HOME_STRAFE;
-        ki_straight_gyro = 0;
         
         return RUNNING;
       }
@@ -584,7 +582,7 @@ STATE running() {
 
       ClosedLoopStraight(u_distance);
 
-       if (average_ir <= distance_aim) 
+       if ((!forward_backward && (average_ir <= distance_aim)) || (forward_backward && (average_ir <= distance_aim))) 
        {
            BluetoothSerial.println("STARTED STRAFING");
            stop();
@@ -738,28 +736,21 @@ void Sonar()
 
 
 double KalmanSonar(double rawdata){   // Kalman Filter
-  if (rawdata < 20){ //If the value is absolutely outrageous, ignore it and use the last recorded value
-    return sonar_cm;
-  }
-  else{
-    rawdata = constrain(rawdata, sonar_cm - 20, sonar_cm + 20);
+
     double a_post_est, a_priori_var, a_post_var, kalman_gain;
 
+    rawdata = constrain(rawdata, sonar_cm-10, sonar_cm + 10);
     a_priori_var = sonar_variance + process_noise_sonar; 
 
     kalman_gain = a_priori_var/(a_priori_var+sensor_noise_sonar);
     a_post_est = sonar_cm + kalman_gain*(rawdata-sonar_cm);
     sonar_variance = (1 * kalman_gain)*a_priori_var;
     sonar_cm = rawdata;
-    BluetoothSerial.println("Kalman");
     return a_post_est;
-  }   
 }
 
 double SonarCheck(double angle_in)
 {
-    BluetoothSerial.println("SONAR CHECK START");
-    BluetoothSerial.println("");
     turret_motor.write(angle_in);
 
     delay(300);
@@ -770,18 +761,13 @@ double SonarCheck(double angle_in)
         sonar_cm = 0;
         while (sonar_cm < 5 ||sonar_cm >200){
           Sonar();
-
           ultraArray[i] = sonar_cm;
-          delay(100);
+          delay(20);
 
-          BluetoothSerial.println(sonar_cm);
+          // BluetoothSerial.println(sonar_cm);
         }
     }
     sonar_cm = average_array(ultraArray, 0, 20);
-
-    BluetoothSerial.println("");
-    BluetoothSerial.println("SONAR CHECK END");
-    
     return (sonar_cm);
 
 }
@@ -1199,11 +1185,10 @@ void reverse ()
 
 void ccw ()
 {
-  double speed = 200;
-  left_font_motor.writeMicroseconds(1500 - speed);
-  left_rear_motor.writeMicroseconds(1500 - speed);
-  right_rear_motor.writeMicroseconds(1500 - speed);
-  right_font_motor.writeMicroseconds(1500 - speed);
+  left_font_motor.writeMicroseconds(1500 - speed_val);
+  left_rear_motor.writeMicroseconds(1500 - speed_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val);
+  right_font_motor.writeMicroseconds(1500 - speed_val);
 }
 
 void cw ()
