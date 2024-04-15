@@ -138,6 +138,7 @@ double ultraArray[20];
 double sonar_threshold = 2;
 int wall_settled = 0;
 double wall = 0;
+double rate_of_change = 10;
 
 //Sonar values
 double sonar_cm = 0;
@@ -215,7 +216,7 @@ static int MIN_SIDE_DIST = 20;
 
 // Sonar
 int sonar_MA_n = 10;
-double sonar_values[10];
+double sonar_values[30];
 
 // Timer values
 #define TIMER_FREQUENCY 500
@@ -264,47 +265,15 @@ void setup(void)
   path_state = FORWARD;
   last_path_state = FORWARD;
 
-  // // Timer Set up
-  // TCCR2A = 0;// set entire TCCR2A register to 0
-  // TCCR2B = 0;// same for TCCR2B
-  // TCNT2  = 0;//initialize counter value to 0
-    
-  // // Set timer compare value
-  // OCR2A = (16*10^6) / (timer_frequency * 256) - 1; // = (16*10^6) / (freq * prescaler) - 1 (must be < 256 for 8 bit timer)
-  // // turn on CTC mode
-  // TCCR2A |= (1 << WGM21);
-  // // Set CS21 bit for 256 prescaler
-  // TCCR2B |= (1 << CS22) | (1 << CS21);   
-  // // enable timer compare interrupt
-  // TIMSK2 |= (1 << OCIE2A);
-
   delay(1000); //settling time but noT really needed
 }
 
-// ISR(TIMER2_COMPA_vect)
-// {
-//     timerCount++;
-//     if (timerCount == timer_compensation) 
-//     {
-//       // TIMSK2 |= (0 << OCIE2A);
-//       BluetoothSerial.println("INTERRUPT TRIGGERED");
-//       // Gyro();
-//       run_sequence = 1;
-//       timerCount = 0;
-//       // TIMSK2 |= (1 << OCIE2A);
-//     }
-// }
 
 /*******************SUPER LOOP**********************/
 void loop(void) //main loop
 {
   
     static STATE machine_state = INITIALISING;
-    // if (millis() - run_sequence >= 50 && machine_state != INITIALISING){
-    //   run_sequence = millis();
-    //   Gyro();
-    //   }
-    //Finite-state machine Code
     switch (machine_state) {
       case INITIALISING:
         machine_state = initialising();
@@ -358,7 +327,7 @@ STATE initialising() {
   intialise_sensors();
   SonarCheck(90);
   
-  return RUNNING;
+  return HOMING;
 }
 
 /*******************HOMING**********************/
@@ -378,32 +347,35 @@ STATE homing(){
       break;
     case APPROACHING_WALL: //Detect when the robot is approaching a wall
       if (sonar_cm <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
-        BluetoothSerial.println("looking for min");
-        gyro_aim = gyroAngle;
-        home_state = FIND_WALL;
+        wall_settled++;
+          if (wall_settled == 5){
+            BluetoothSerial.println("looking for min");
+            gyro_aim = gyroAngle;
+            home_state = FIND_WALL;
+          }
+
       }
       else if(wall < sonar_cm){ //New maxmum detected, save this value
         wall = sonar_cm;
+        wall_settled = 0;
       }
       break;
     case FIND_WALL: //Look for local min point
-      if (wall > cm && abs(sonar_cm-cm) < 10){ //New minimum found, log angle and min distance //
+      if (wall > cm){ //New minimum found, log angle and min distance //
         gyro_aim = gyroAngle;
+        rate_of_change = wall - cm; // change in distance from last wall reading
         wall = cm;
+        wall_settled = 0;
         BluetoothSerial.print("CURRENT ANGLE: ");
         BluetoothSerial.println(gyroAngle);
+        BluetoothSerial.print("RATE OF CHANGE: ");
+        BluetoothSerial.println(rate_of_change);
       }
-      else if(sonar_cm >= wall+sonar_threshold ){ //Minimum surpassed, turn towards given location
+      if(rate_of_change < 2){ //Minimum approaching, turn towards given location
         stop();
-        delay(1000); //allow motors to power off before completely switching the direction
-        BluetoothSerial.print("STOPPED ANGLE ");
-        BluetoothSerial.println(gyroAngle);
-        gyro_aim = gyroAngle - gyro_aim;
+        delay(500); //allow motors to power off before completely switching the direction
         gyroAngle = 0;
-        BluetoothSerial.println("trying to face wall");
-        BluetoothSerial.print("AIMING FOR ANGLE: ");
-        BluetoothSerial.println(gyro_aim);
-        home_state = FACE_WALL;
+        return ALIGNING;
       }
       break;
     case FACE_WALL:
@@ -411,7 +383,7 @@ STATE homing(){
       BluetoothSerial.println(gyroAngle);
       double sonar_error;
       sonar_error = ClosedLoopTurn(200, -gyro_aim); 
-      if (abs(sonar_error) <= 5){
+      if (abs(sonar_error) <= 8){
         wall_settled++;
         if (wall_settled == 10){
           wall_settled = 0;
@@ -474,9 +446,9 @@ STATE align()
           turn_error = ClosedLoopTurn(150, 90); //Aim 90 degrees
           if (abs(turn_error) <= 5){
             wall_settled++;
-            if (wall_settled == 10){
+            if (wall_settled == 5){
               stop();
-              delay(2000);
+              delay(500);
               BluetoothSerial.println("TURNING STOPPED");
               //turn the turret motor back to its closest direction
               align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
@@ -496,8 +468,9 @@ STATE align()
       break;
 
 
-        case GO_HOME_STRAIGHT:
-      BluetoothSerial.print("Waiting to go home");
+    case GO_HOME_STRAIGHT:
+      read_IR_sensors();
+      filter_IR_reading();
       kp_distance = 1;
       ki_distance = 0;
 
@@ -589,7 +562,7 @@ STATE running() {
        {
            BluetoothSerial.println("STARTED STRAFING");
            stop();
-           delay(50);
+           delay(500);
 
            SonarCheck(0);
 
@@ -622,7 +595,7 @@ STATE running() {
         
 
         if (sonar_cm <= (sonar_baseline + DISTANCE_OFFSET)){
-          delay(50);
+          delay(500);
 
           stop();
 
@@ -752,7 +725,6 @@ double KalmanSonar(double rawdata){   // Kalman Filter
     a_post_est = sonar_cm + kalman_gain*(rawdata-sonar_cm);
     sonar_variance = (1 * kalman_gain)*a_priori_var;
     sonar_cm = rawdata;
-    BluetoothSerial.println("Kalman");
     return a_post_est;
   }   
 }
@@ -777,7 +749,7 @@ double SonarCheck(double angle_in)
         delay(50);
     }
     (value_count > 0 ? sonar_cm = sonar_sum/value_count : sonar_cm = sonar_cm);
-    //comment
+
     BluetoothSerial.println("");
     BluetoothSerial.println("SONAR CHECK END");
     
@@ -987,12 +959,6 @@ void ClosedLoopStraight(int speed_val)
     correction_val = constrain(correction_val_1, -300, 300);
 
     ki_straight_gyro += e;
-
-    BluetoothSerial.print("Gyro power:         ");
-    BluetoothSerial.println(correction_val_1);
-    BluetoothSerial.print("Gyro Angle Change: ");
-    BluetoothSerial.println(e);
-    BluetoothSerial.println("");
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
