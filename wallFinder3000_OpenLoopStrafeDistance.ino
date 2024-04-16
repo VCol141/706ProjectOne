@@ -527,6 +527,8 @@ STATE align()
   return return_state;
 }
 
+bool strafe_print = 0;
+
 /*******************RUNNING**********************/
 STATE running() {
   STATE return_state = RUNNING;
@@ -579,7 +581,7 @@ STATE running() {
 
           SonarCheck(0);
 
-          BluetoothSerial.print("Strafing: ");
+        BluetoothSerial.println("!----------- Strafing -----------!");
 
           ki_distance_sonar = 0;
 
@@ -627,14 +629,15 @@ STATE running() {
             delay(100);
             ki_distance_sonar = 0;
             (forward_backward) ? reverse() : forward();
-            delay(300);
+            delay(400);
+            stop();
+
             ki_straight_gyro = 0;
             run_state = STRAIGHT;
             forward_backward = !forward_backward;
-            
             straight_time = millis();
 
-            BluetoothSerial.print("Straight: ");
+            BluetoothSerial.println("!----------- Straight -----------!");
         //   }
         }
         else {
