@@ -101,7 +101,7 @@ Servo left_rear_motor;  // create servo object to control Vex Motor Controller 2
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
 
-int speed_val = 350;
+int speed_val = 400;
 int speed_change;
 
 
@@ -206,25 +206,21 @@ bool last_lap = 0;
 double distance_aim = 20;
 
 static int MIN_DISTANCE = 15;
-static int MAX_DISTANCE = 160;
+static int MAX_DISTANCE = 110;
 static int STRAFE_DISTANCE = 9.5;
 static int MIN_SIDE_DIST = 23;
 
-static int strafe_time = 500;
+static int strafe_time = 325;
 long strafe_current_time = 0;
 
 // Sonar
 int sonar_MA_n = 10;
 double sonar_values[30];
 
-// Timer values
-#define TIMER_FREQUENCY 500
-#define TIMER_COMPENSATION_VAL 10
-
-int timer_frequency = 500;
-int timer_compensation = 10;
 double run_sequence = millis();
 
+int strafe_number = 0;
+int straight_number = 0;
 int timerCount = 0;
 
 /*******************MAIN SET-UP**********************/
@@ -508,7 +504,7 @@ STATE align()
         delay(100);
         align_state = GO_HOME_STRAFE;
         ki_straight_gyro = 0;
-        SonarCheck(0);
+        SonarCheck(180);
         BluetoothSerial.println("Finsished Homing");
         straight_time = millis(); //RUN THIS FUNCTION WHEN TRANSISTIONING INTO 'RUNNING STATE' 
         return RUNNING;
@@ -526,8 +522,6 @@ STATE align()
 
   return return_state;
 }
-
-bool strafe_print = 0;
 
 /*******************RUNNING**********************/
 STATE running() {
@@ -579,14 +573,18 @@ STATE running() {
           stop();
           wall_settled = 0;
 
-          SonarCheck(0);
+          SonarCheck(180);
 
-        BluetoothSerial.println("!----------- Strafing -----------!");
+        BluetoothSerial.print("!----------- Strafing ");
+        BluetoothSerial.print(straight_number);
+        BluetoothSerial.println(" -----------!");
+
+        straight_number++;
 
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          (sonar_cm < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+          (sonar_cm > MAX_DISTANCE) ? run_state = STOP : run_state = STRAFE;
 
           strafe_current_time = millis();
         }
@@ -626,10 +624,10 @@ STATE running() {
 
             wall_settled = 0;
             stop();
-            delay(100);
+            delay(50);
             ki_distance_sonar = 0;
             (forward_backward) ? reverse() : forward();
-            delay(400);
+            delay(450);
             stop();
 
             ki_straight_gyro = 0;
@@ -637,7 +635,11 @@ STATE running() {
             forward_backward = !forward_backward;
             straight_time = millis();
 
-            BluetoothSerial.println("!----------- Straight -----------!");
+            BluetoothSerial.print("!----------- Straight ");
+            BluetoothSerial.print(strafe_number);
+            BluetoothSerial.println(" -----------!");
+
+        strafe_number++;
         //   }
         }
         else {
@@ -996,7 +998,7 @@ void ClosedLoopStraight(int speed_val)
 
     double correction_val_1 = kp_gyro * e + ki_gyro * ki_straight_gyro;
 
-    correction_val = constrain(correction_val_1, -150, 150);
+    correction_val = constrain(correction_val_1, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
     ki_straight_gyro += e;
 
