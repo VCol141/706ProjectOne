@@ -600,7 +600,7 @@ STATE running() {
         ClosedLoopStrafe(u_distance);
         
 
-        if (abs(e_distance) < 20){
+        if (abs(e_distance) < 2){
           stop();
 
           run_state = STRAIGHT;

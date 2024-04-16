@@ -38,7 +38,6 @@ enum STATE {
 };
 
 //Homing variables
-//Homing variables
 enum homing_state {
     ROTATE,
     APPROACHING_WALL,
@@ -102,7 +101,7 @@ Servo left_rear_motor;  // create servo object to control Vex Motor Controller 2
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
 
-int speed_val = 300;
+int speed_val = 350;
 int speed_change;
 
 
@@ -142,7 +141,6 @@ double rate_of_change = 10;
 
 //Sonar values
 double sonar_cm = 0;
-double straight_time = 0;
 double ki_integral_sonar = 0;
 double cm = 0;
 double ki_integral_angle = 0;
@@ -194,14 +192,14 @@ double ki_strafe_gyro = 0;
 double ki_strafe_ir = 0;
 
 double ki_turn_gyro = 0;
-
 double ki_distance_sonar = 0;
+double straight_time;
 
 #define CONTROL_CONSTRAINT_GYRO 100
 
 // Run
 
-bool forward_backward = 0;
+bool forward_backward = 1;
 
 bool last_lap = 0;
 
@@ -209,10 +207,8 @@ double distance_aim = 20;
 
 static int MIN_DISTANCE = 15;
 static int MAX_DISTANCE = 160;
-static int STRAFE_DISTANCE = 10;
-
-static int DISTANCE_OFFSET = 11.1;
-static int MIN_SIDE_DIST = 20;
+static int STRAFE_DISTANCE = 9.5;
+static int MIN_SIDE_DIST = 25;
 
 // Sonar
 int sonar_MA_n = 10;
@@ -291,10 +287,10 @@ void loop(void) //main loop
         machine_state = stopped();
         break;
     };
+
     Sonar();
     Gyro();
     delay(10);
-  // }
 }
 
 /*******************INITIALISING**********************/
@@ -314,19 +310,8 @@ STATE initialising() {
   }
   gyroZeroVoltage = sum1 / 200; // average the sum as the zero drifting
 
-
-  // for(int i = 0; i < 20; i++){
-  //   gyroVal = analogRead(gyroPin);
-  //   gyroRate = (gyroVal * 5.00) / 1023
-  //   // find the voltage offset the value of voltage when gyro is zero (still)
-  //   gyroRate -= (gyroZeroVoltage * 5.00) / 1023;
-  //   gyro_array[i] = (gyroRate / 0.007);
-  // }
-  // gyro_average = average_array(gyro_array, 0, 20);
-
-  intialise_sensors();
-  SonarCheck(90);
   
+  SonarCheck(90); // CHANGE THIS TO 90 WHEN CHANGING STATE TO HOMING
   return HOMING;
 }
 
@@ -349,6 +334,7 @@ STATE homing(){
       if (sonar_cm <= wall - sonar_threshold){ //If maximum surpassed/is already decreasing, start looking for wall
         wall_settled++;
           if (wall_settled == 5){
+            wall_settled = 0;
             BluetoothSerial.println("looking for min");
             gyro_aim = gyroAngle;
             home_state = FIND_WALL;
@@ -370,6 +356,7 @@ STATE homing(){
         BluetoothSerial.println(gyroAngle);
         BluetoothSerial.print("RATE OF CHANGE: ");
         BluetoothSerial.println(rate_of_change);
+        BluetoothSerial.println("");
       }
       if(rate_of_change < 2){ //Minimum approaching, turn towards given location
         stop();
@@ -447,21 +434,27 @@ STATE align()
           if (abs(turn_error) <= 5){
             wall_settled++;
             if (wall_settled == 5){
+              wall_settled = 0;
               stop();
               delay(500);
               BluetoothSerial.println("TURNING STOPPED");
               //turn the turret motor back to its closest direction
               align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
-              distance_aim = 140;
+              distance_aim = 50;
+              initialise_sensors(); //RUN THIS FUNCTION WHEN TRANSISTIONING INTO 'RUNNING STATE'
               BluetoothSerial.println("GOING HOME");
-              gyroAngle = 0;      //make sonar straight again
+              gyroAngle = 0; 
+              
             }
           } 
         }
         else{
-          align_state = GO_HOME_STRAIGHT;        //it is in the right orientation
-          distance_aim = 140;
+          wall_settled = 0;
+          align_state = GO_HOME_STRAIGHT;
+          initialise_sensors(); //RUN THIS FUNCTION WHEN TRANSISTIONING INTO 'RUNNING STATE'
+          distance_aim = 50;
           BluetoothSerial.println("GOING HOME");
+          // SonarCheck(0);
         }
         
       }
@@ -471,22 +464,27 @@ STATE align()
     case GO_HOME_STRAIGHT:
       read_IR_sensors();
       filter_IR_reading();
-      kp_distance = 1;
+      kp_distance = 4;
       ki_distance = 0;
 
       e_distance = -(average_IR(LR1mm, LR3mm) - distance_aim);
 
-      u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
+      reverse();
 
-      ClosedLoopStraight(u_distance);
-
-      if (average_IR(LR1mm, LR3mm) <= 140) 
+      if (average_IR(LR1mm, LR3mm) < (distance_aim+20)) 
       {
-        stop();
-        delay(1000);
-        align_state = GO_HOME_STRAFE;
-        SonarCheck(0);
-
+        wall_settled++;
+        if (wall_settled == 3){
+          stop();
+          delay(200);
+          SonarCheck(0);
+          wall_settled = 0;
+          return RUNNING;
+          
+        }
+      }
+      else{
+        wall_settled = 0;
       }
       break;
 
@@ -494,18 +492,23 @@ STATE align()
       kp_distance = 20;
       ki_distance = 0;
 
-      e_distance = sonar_cm - 105;
+      e_distance = sonar_cm - 145;
       u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
       ClosedLoopStrafe(u_distance);
+      
+      BluetoothSerial.print("SOnar: ");
+      BluetoothSerial.println(sonar_cm);
 
-      if (sonar_cm >= 102) 
+      if (sonar_cm >= 150) 
       {
         stop();
-        delay(1000);
+        delay(100);
         align_state = GO_HOME_STRAFE;
         ki_straight_gyro = 0;
+        SonarCheck(0);
         
+        straight_time = millis(); //RUN THIS FUNCTION WHEN TRANSISTIONING INTO 'RUNNING STATE' 
         return RUNNING;
       }
       break;
@@ -528,9 +531,10 @@ STATE running() {
   static RUN run_state = STRAIGHT;
 
   double e_distance, u_distance;
-  double kp_distance = 1;
+  double kp_distance;
   double ki_distance = 0;
   double average_ir = 0;
+
   // e_distance = sonar_cm - distance_aim;
 
   read_IR_sensors();
@@ -538,53 +542,65 @@ STATE running() {
 
   switch(run_state){ 
     case STRAIGHT:
-      distance_aim = 140;
-      if (!forward_backward) {
-        average_ir = average_IR(MR1mm, MR2mm);
-        // BluetoothSerial.print("Front IR distance: ");
-        // BluetoothSerial.println(average_ir);
-        e_distance = average_ir - distance_aim;
+
+      kp_distance = (forward_backward) ? 2.5 : 1.2;
+      distance_aim = (forward_backward) ? 50 : 125;
+
+      average_ir = (forward_backward) ? average_IR(LR1mm, LR3mm) : average_IR(MR1mm, MR2mm);
+
+      e_distance = (forward_backward) ? distance_aim - average_ir : average_ir - distance_aim;
+
+      if (millis()- straight_time < 4000){
+        e_distance = e_distance*40;
       }
-      else {
-        average_ir = average_IR(LR1mm, LR3mm);
-        // BluetoothSerial.print("Rear IR distance: ");
-        // BluetoothSerial.println(average_ir);
-        e_distance = -(average_ir- distance_aim);
-      }
-      // BluetoothSerial.print("DISTANCE ERROR: ");
-      // BluetoothSerial.println(e_distance);
-      // BluetoothSerial.println("");
+
       u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
       ClosedLoopStraight(u_distance);
 
-       if (average_ir <= distance_aim) 
+      // BluetoothSerial.print("average_ir: ");
+      // BluetoothSerial.println(average_ir);
+      // BluetoothSerial.print("u_distance: ");
+      // BluetoothSerial.println(u_distance);
+      // BluetoothSerial.print("e_distance: ");
+      // BluetoothSerial.println(e_distance);
+      // BluetoothSerial.print("ki_distance_sonar ");
+      // BluetoothSerial.println(ki_distance_sonar);
+      // BluetoothSerial.println(" ");
+
+       if (average_ir < (distance_aim+20))
        {
-           BluetoothSerial.println("STARTED STRAFING");
-           stop();
-           delay(500);
+        wall_settled++;
+        if (wall_settled == 3){
+          stop();
+          wall_settled = 0;
+          delay(100);
 
-           SonarCheck(0);
+          BluetoothSerial.println(" !!!!STRAFE!!!! ");
 
-           sonar_baseline = sonar_baseline - STRAFE_DISTANCE;
+          sonar_baseline = sonar_baseline - STRAFE_DISTANCE;
 
-           ki_distance_sonar = 0;
+          ki_distance_sonar = 0;
 
-           (sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-
-           (sonar_baseline < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+          //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
+          (sonar_baseline < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+        }
+           
+      }
+      else{
+        wall_settled = 0;
       }
       break;
 
       case STRAFE:
-        kp_distance = 20;
+        kp_distance = 30;
 
         e_distance = sonar_cm - sonar_baseline;
         u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
         BluetoothSerial.println("STRAFING ");
         BluetoothSerial.print("sonar_baseline ");
-        BluetoothSerial.println(distance_aim);
+        BluetoothSerial.println(sonar_baseline);
         BluetoothSerial.print("Actual reading ");
         BluetoothSerial.println(sonar_cm);
         BluetoothSerial.print("Current Error: ");
@@ -593,21 +609,25 @@ STATE running() {
 
         ClosedLoopStrafe(u_distance);
         
-
-        if (sonar_cm <= (sonar_baseline + DISTANCE_OFFSET)){
-          delay(500);
-
-          stop();
-
-          run_state = STRAIGHT;
-
-          SonarCheck(90);
-
-          distance_aim = 140;
-          ki_distance_sonar = 0;
-
-          forward_backward = !forward_backward;
+        if (abs(e_distance) < 2){
+          wall_settled++;
+          if (wall_settled == 3){
+            wall_settled = 0;
+            stop();
+            delay(200);
+            ki_distance_sonar = 0;
+            (forward_backward) ? reverse() : forward();
+            delay(300);
+            ki_straight_gyro = 0;
+            run_state = STRAIGHT;
+            forward_backward = !forward_backward;
+            straight_time = millis();
           }
+        }
+        else {
+          wall_settled = 0;
+        }
+          
         break;
 
       case STOP:
@@ -615,6 +635,7 @@ STATE running() {
         return_state = STOPPED;
         break;
     };
+
 
   ki_distance_sonar += e_distance;
   return return_state;
@@ -702,11 +723,11 @@ void Sonar()
     
     (sonar_cm == 0 ? sonar_cm = cm : sonar_cm = KalmanSonar(cm));
 
-    BluetoothSerial.print("Raw Sonar Reading");
-    BluetoothSerial.println(cm);
-    BluetoothSerial.print("Last sonar reading");
-    BluetoothSerial.println(sonar_cm);
-    BluetoothSerial.println("");
+    // BluetoothSerial.print("Raw Sonar Reading");
+    // BluetoothSerial.println(cm);
+    // BluetoothSerial.print("Last sonar reading");
+    // BluetoothSerial.println(sonar_cm);
+    // BluetoothSerial.println("");
 }
 
 
@@ -759,7 +780,7 @@ double SonarCheck(double angle_in)
 
 
 /*******************SONAR/IR INITIALISATION**********************/
-void intialise_sensors(){
+void initialise_sensors(){
 double MR1sum, MR2sum, LR1sum, LR3sum;
 int iterations = 20;
 
@@ -820,7 +841,7 @@ void read_IR_sensors(){
 
 void filter_IR_reading(){
   //Average these to final value 
-  double mrbuffer = 200;
+  double mrbuffer = 150;
   double lrbuffer = 500;
   MR1mm = constrain(MR1mm_reading, MR1mm-mrbuffer, MR1mm+mrbuffer);
   MR2mm = constrain(MR2mm_reading, MR2mm-mrbuffer, MR2mm+mrbuffer);
@@ -956,7 +977,7 @@ void ClosedLoopStraight(int speed_val)
 
     double correction_val_1 = kp_gyro * e + ki_gyro * ki_straight_gyro;
 
-    correction_val = constrain(correction_val_1, -300, 300);
+    correction_val = constrain(correction_val_1, -150, 150);
 
     ki_straight_gyro += e;
 
