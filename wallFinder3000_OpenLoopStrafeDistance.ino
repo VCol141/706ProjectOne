@@ -613,7 +613,7 @@ STATE running() {
         // BluetoothSerial.println(e_distance);
         // BluetoothSerial.println("");
 
-        kp_distance = 3;
+        kp_distance = 20;
 
         e_distance = (strafe_current_time + strafe_time) - millis();
 
