@@ -101,7 +101,7 @@ Servo left_rear_motor;  // create servo object to control Vex Motor Controller 2
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
 
-int speed_val = 400;
+int speed_val = 350;
 int speed_change;
 
 
@@ -195,7 +195,7 @@ double ki_turn_gyro = 0;
 double ki_distance_sonar = 0;
 double straight_time;
 
-#define CONTROL_CONSTRAINT_GYRO 100
+#define CONTROL_CONSTRAINT_GYRO 150
 
 // Run
 
@@ -584,7 +584,9 @@ STATE running() {
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          (sonar_cm >= MAX_DISTANCE || strafe_number > 10) ? run_state = STOP : run_state = STRAFE;
+          ((sonar_cm >= MAX_DISTANCE && strafe_number > 7) || strafe_number > 11) ? run_state = STOP : run_state = STRAFE;
+
+          strafe_time = (forward_backward) ? 500 : 300;
 
           strafe_current_time = millis();
         }
@@ -626,15 +628,21 @@ STATE running() {
             stop();
             delay(50);
             ki_distance_sonar = 0;
+
+
             (forward_backward) ? reverse() : forward();
 
-            strafe_current_time = 0;
+            speed_val = 300;
+
+            strafe_current_time = millis();
             
-            while (millis() - strafe_current_time >= 450)
+            while (millis() - strafe_current_time <= 350)
             {
               Gyro();
               delay(10);
             }
+
+            speed_val = 350;
 
             stop();
 
@@ -998,7 +1006,7 @@ void ClosedLoopStraight(int speed_val)
     double e, correction_val;
 
     double kp_gyro = 30;
-    double ki_gyro = 20;
+    double ki_gyro = 35;
 
     //gyro_error = 0;
     //e = gyroAngleChange;
@@ -1011,6 +1019,13 @@ void ClosedLoopStraight(int speed_val)
     correction_val = constrain(correction_val_1, -CONTROL_CONSTRAINT_GYRO, CONTROL_CONSTRAINT_GYRO);
 
     ki_straight_gyro += e;
+
+    BluetoothSerial.print("Ki:              ");
+    BluetoothSerial.println(ki_straight_gyro);
+    BluetoothSerial.print("e:               ");
+    BluetoothSerial.println(e);
+    BluetoothSerial.print("gyroAngleChange: ");
+    BluetoothSerial.println(gyroAngleChange);
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
