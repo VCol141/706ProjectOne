@@ -210,8 +210,8 @@ static int MAX_DISTANCE = 160;
 static int STRAFE_DISTANCE = 9.5;
 static int MIN_SIDE_DIST = 23;
 
-static int strafe_time = 700;
-int strafe_current_time = 0;
+static int strafe_time = 500;
+long strafe_current_time = 0;
 
 // Sonar
 int sonar_MA_n = 10;
@@ -499,8 +499,8 @@ STATE align()
 
       ClosedLoopStrafe(u_distance);
       
-      BluetoothSerial.print("Sonar: ");
-      BluetoothSerial.println(sonar_cm);
+    //   BluetoothSerial.print("Sonar: ");
+    //   BluetoothSerial.println(sonar_cm);
 
       if (sonar_cm <= 25) 
       {
@@ -546,7 +546,7 @@ STATE running() {
     case STRAIGHT:
 
       kp_distance = (forward_backward) ? 2.5 : 1.2;
-      distance_aim = (forward_backward) ? 50 : 125;
+      distance_aim = (forward_backward) ? 50 : 110;
 
       average_ir = (forward_backward) ? average_IR(LR1mm, LR3mm) : average_IR(MR1mm, MR2mm);
 
@@ -576,18 +576,15 @@ STATE running() {
         if (wall_settled == 3){
           stop();
           wall_settled = 0;
-          delay(100);
 
           SonarCheck(0);
 
-          sonar_baseline = constrain(sonar_cm - STRAFE_DISTANCE, 20, 400);
-
-          BluetoothSerial.println(" !!!!STRAFE!!!! ");
+          BluetoothSerial.print("Strafing: ");
 
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          (sonar_baseline < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
+          (sonar_cm < MIN_SIDE_DIST) ? run_state = STOP : run_state = STRAFE;
 
           strafe_current_time = millis();
         }
@@ -623,18 +620,22 @@ STATE running() {
         
         if (millis() - strafe_current_time >= strafe_time){
           wall_settled++;
-          if (wall_settled == 3){
+        //   if (wall_settled == 3){
+
             wall_settled = 0;
             stop();
-            delay(200);
+            delay(100);
             ki_distance_sonar = 0;
             (forward_backward) ? reverse() : forward();
             delay(300);
             ki_straight_gyro = 0;
             run_state = STRAIGHT;
             forward_backward = !forward_backward;
+            
             straight_time = millis();
-          }
+
+            BluetoothSerial.print("Straight: ");
+        //   }
         }
         else {
           wall_settled = 0;
@@ -651,6 +652,8 @@ STATE running() {
 
 
   ki_distance_sonar += e_distance;
+
+  BluetoothSerial.println(sonar_cm);
   return return_state;
 }
 
@@ -784,8 +787,8 @@ double SonarCheck(double angle_in)
     }
     (value_count > 0 ? sonar_cm = sonar_sum/value_count : sonar_cm = sonar_cm);
 
-    BluetoothSerial.println("");
-    BluetoothSerial.println("SONAR CHECK END");
+    // BluetoothSerial.println("");
+    // BluetoothSerial.println("SONAR CHECK END");
     
     return (sonar_cm);
 
@@ -918,8 +921,8 @@ void Gyro()
 
 double average_gyro(double rawdata){
   gyro_array[array_index] = KalmanGyro(rawdata);
-  BluetoothSerial.print("KALMANED VALUE");
-  BluetoothSerial.println(gyro_array[array_index]);
+//   BluetoothSerial.print("KALMANED VALUE");
+//   BluetoothSerial.println(gyro_array[array_index]);
   array_index++;
   if (array_index == 20){
     array_index = 0;
@@ -960,10 +963,10 @@ double ClosedLoopTurn(double speed, double target_angle)
   right_rear_motor.writeMicroseconds(1500 + correction_val);
   right_font_motor.writeMicroseconds(1500 + correction_val);
 
-  BluetoothSerial.print("Current Error: ");
-  BluetoothSerial.println(e);
-  BluetoothSerial.print("Gyro aim: ");
-  BluetoothSerial.println(target_angle);
+//   BluetoothSerial.print("Current Error: ");
+//   BluetoothSerial.println(e);
+//   BluetoothSerial.print("Gyro aim: ");
+//   BluetoothSerial.println(target_angle);
   // BluetoothSerial.print("Gyro angle:  ");
   // BluetoothSerial.println(gyroAngle);
   // BluetoothSerial.print("correction:   ");
@@ -1033,20 +1036,20 @@ void ClosedLoopStrafe(int speed_val)
 void align_against_wall(){
   if(!found_angle_offset){
       //calculate the misalignment angle of the robot using trig
-      BluetoothSerial.print("LR1 Reading: ");
-      BluetoothSerial.println(LR1mm_reading);
-      BluetoothSerial.print("LR3 Reading: ");
-      BluetoothSerial.println(LR3mm_reading);
+    //   BluetoothSerial.print("LR1 Reading: ");
+    //   BluetoothSerial.println(LR1mm_reading);
+    //   BluetoothSerial.print("LR3 Reading: ");
+    //   BluetoothSerial.println(LR3mm_reading);
       double IR_base_length = 100;
       double IR_height_offset = LR3mm_reading - LR1mm_reading;
       IR_angle_error = atan(IR_height_offset/IR_base_length) * (180/3.14);    //convert rad to deg
       align_state = ALIGN_ROBOT;
-      BluetoothSerial.print("angle offset: ");
-      BluetoothSerial.println(IR_angle_error);
+    //   BluetoothSerial.print("angle offset: ");
+    //   BluetoothSerial.println(IR_angle_error);
       gyroAngle = 0;      //make sonar straight again
       found_angle_offset = true;
   }else{
-      BluetoothSerial.print("Fixing angle...");
+    //   BluetoothSerial.print("Fixing angle...");
       double sonar_error;
       sonar_error = ClosedLoopTurn(200, IR_angle_error); 
       if (abs(sonar_error) <= 5){
@@ -1055,7 +1058,7 @@ void align_against_wall(){
           wall_settled = 0;
           stop();
           delay(2000);
-          BluetoothSerial.println("TURNING STOPPED");
+        //   BluetoothSerial.println("TURNING STOPPED");
           gyroAngle = 0;
 
           align_state = DUMMY;
