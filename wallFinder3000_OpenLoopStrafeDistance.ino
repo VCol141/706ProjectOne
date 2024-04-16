@@ -206,7 +206,7 @@ bool last_lap = 0;
 double distance_aim = 20;
 
 static int MIN_DISTANCE = 15;
-static int MAX_DISTANCE = 110;
+static int MAX_DISTANCE = 100;
 static int STRAFE_DISTANCE = 9.5;
 static int MIN_SIDE_DIST = 23;
 
@@ -584,7 +584,7 @@ STATE running() {
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          (sonar_cm > MAX_DISTANCE) ? run_state = STOP : run_state = STRAFE;
+          (sonar_cm >= MAX_DISTANCE) ? run_state = STOP : run_state = STRAFE;
 
           strafe_current_time = millis();
         }
