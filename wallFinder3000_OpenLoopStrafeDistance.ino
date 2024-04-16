@@ -542,7 +542,7 @@ STATE running() {
     case STRAIGHT:
 
       kp_distance = (forward_backward) ? 2.5 : 1.2;
-      distance_aim = (forward_backward) ? 50 : 110;
+      distance_aim = (forward_backward) ? 50 : 105;
 
       average_ir = (forward_backward) ? average_IR(LR1mm, LR3mm) : average_IR(MR1mm, MR2mm);
 
@@ -584,7 +584,7 @@ STATE running() {
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          (sonar_cm >= MAX_DISTANCE) ? run_state = STOP : run_state = STRAFE;
+          (sonar_cm >= MAX_DISTANCE || strafe_number > 10) ? run_state = STOP : run_state = STRAFE;
 
           strafe_current_time = millis();
         }
@@ -627,8 +627,18 @@ STATE running() {
             delay(50);
             ki_distance_sonar = 0;
             (forward_backward) ? reverse() : forward();
-            delay(450);
+
+            strafe_current_time = 0;
+            
+            while (millis() - strafe_current_time >= 450)
+            {
+              Gyro();
+              delay(10);
+            }
+
             stop();
+
+            delay(100);
 
             ki_straight_gyro = 0;
             run_state = STRAIGHT;
