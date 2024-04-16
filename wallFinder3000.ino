@@ -199,7 +199,7 @@ double straight_time;
 
 // Run
 
-bool forward_backward = 1;
+bool forward_backward = 0;
 
 bool last_lap = 0;
 
@@ -208,7 +208,7 @@ double distance_aim = 20;
 static int MIN_DISTANCE = 15;
 static int MAX_DISTANCE = 160;
 static int STRAFE_DISTANCE = 9.5;
-static int MIN_SIDE_DIST = 25;
+static int MIN_SIDE_DIST = 23;
 
 // Sonar
 int sonar_MA_n = 10;
@@ -477,10 +477,9 @@ STATE align()
         if (wall_settled == 3){
           stop();
           delay(200);
-          SonarCheck(0);
-          wall_settled = 0;
-          return RUNNING;
-          
+          SonarCheck(180);
+          wall_settled = 0;    
+          align_state = GO_HOME_STRAFE;      
         }
       }
       else{
@@ -492,22 +491,22 @@ STATE align()
       kp_distance = 20;
       ki_distance = 0;
 
-      e_distance = sonar_cm - 145;
+      e_distance = 15 - sonar_cm;
       u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
       ClosedLoopStrafe(u_distance);
       
-      BluetoothSerial.print("SOnar: ");
+      BluetoothSerial.print("Sonar: ");
       BluetoothSerial.println(sonar_cm);
 
-      if (sonar_cm >= 150) 
+      if (sonar_cm <= 25) 
       {
         stop();
         delay(100);
         align_state = GO_HOME_STRAFE;
         ki_straight_gyro = 0;
         SonarCheck(0);
-        
+        BluetoothSerial.println("Finsished Homing");
         straight_time = millis(); //RUN THIS FUNCTION WHEN TRANSISTIONING INTO 'RUNNING STATE' 
         return RUNNING;
       }
@@ -576,9 +575,11 @@ STATE running() {
           wall_settled = 0;
           delay(100);
 
-          BluetoothSerial.println(" !!!!STRAFE!!!! ");
+          SonarCheck(0);
 
-          sonar_baseline = sonar_baseline - STRAFE_DISTANCE;
+          sonar_baseline = constrain(sonar_cm - STRAFE_DISTANCE, 20, 400);
+
+          BluetoothSerial.println(" !!!!STRAFE!!!! ");
 
           ki_distance_sonar = 0;
 
@@ -632,6 +633,7 @@ STATE running() {
 
       case STOP:
         stop();
+        SonarCheck(90);
         return_state = STOPPED;
         break;
     };
