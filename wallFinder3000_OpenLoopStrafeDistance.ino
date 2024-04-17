@@ -476,7 +476,7 @@ STATE align()
         if (wall_settled == 3){
           stop();
           delay(200);
-          SonarCheck(180);
+          SonarCheck(0);
           wall_settled = 0;    
           align_state = GO_HOME_STRAFE;      
         }
@@ -490,7 +490,7 @@ STATE align()
       kp_distance = 20;
       ki_distance = 0;
 
-      e_distance = 15 - sonar_cm;
+      e_distance = sonar_cm - (MAX_DISTANCE + 15);
       u_distance = constrain(kp_distance * e_distance + ki_distance * ki_distance_sonar, -speed_val, speed_val);
 
       ClosedLoopStrafe(u_distance);
@@ -498,7 +498,7 @@ STATE align()
     //   BluetoothSerial.print("Sonar: ");
     //   BluetoothSerial.println(sonar_cm);
 
-      if (sonar_cm <= 25) 
+      if (sonar_cm >= MAX_DISTANCE) 
       {
         stop();
         delay(100);
@@ -584,7 +584,7 @@ STATE running() {
           ki_distance_sonar = 0;
 
           //(sonar_baseline < MIN_SIDE_DIST) ? BluetoothSerial.println("STOP") : BluetoothSerial.println("STRAFING");
-          ((sonar_cm >= MAX_DISTANCE && strafe_number > 7) || strafe_number > 11) ? run_state = STOP : run_state = STRAFE;
+          ((sonar_cm >= MAX_DISTANCE && strafe_number > 7) || strafe_number > 12) ? run_state = STOP : run_state = STRAFE;
 
           strafe_time = (forward_backward) ? 500 : 300;
 
@@ -649,6 +649,8 @@ STATE running() {
             delay(100);
 
             ki_straight_gyro = 0;
+            gyroAngleChange = 0;
+
             run_state = STRAIGHT;
             forward_backward = !forward_backward;
             straight_time = millis();
@@ -1020,12 +1022,12 @@ void ClosedLoopStraight(int speed_val)
 
     ki_straight_gyro += e;
 
-    BluetoothSerial.print("Ki:              ");
-    BluetoothSerial.println(ki_straight_gyro);
-    BluetoothSerial.print("e:               ");
-    BluetoothSerial.println(e);
-    BluetoothSerial.print("gyroAngleChange: ");
-    BluetoothSerial.println(gyroAngleChange);
+    // BluetoothSerial.print("Ki:              ");
+    // BluetoothSerial.println(ki_straight_gyro);
+    // BluetoothSerial.print("e:               ");
+    // BluetoothSerial.println(e);
+    // BluetoothSerial.print("gyroAngleChange: ");
+    // BluetoothSerial.println(gyroAngleChange);
 
     left_font_motor.writeMicroseconds(1500 + speed_val - correction_val);
     left_rear_motor.writeMicroseconds(1500 + speed_val - correction_val);
